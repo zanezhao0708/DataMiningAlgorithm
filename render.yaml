@@ -1,0 +1,11 @@
+# Render 一键部署蓝图：https://render.com/deploy 选择本仓库后自动读取
+# 免费版无需信用卡；15 分钟无访问会休眠，首次唤醒约 10-30 秒
+services:
+  - type: web
+    name: ml-algo-lab
+    runtime: python
+    plan: free
+    region: singapore          # 离中国大陆最近的可用区
+    buildCommand: pip install -r requirements.txt
+    startCommand: cd visualization_lab && python main.py
+    autoDeploy: true           # push 到 main 自动重新部署

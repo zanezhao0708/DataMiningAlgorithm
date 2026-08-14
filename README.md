@@ -14,11 +14,24 @@
 不依赖 scikit-learn / PyTorch，每一个算法都从零实现、逐行中文注释，
 既能当**算法学习笔记**，也能打开浏览器**动手玩**。
 
-[快速开始](#快速开始) · [算法清单](#算法清单) · [可视化实验室](#可视化实验室) · [代码示例](#代码示例)
+[在线体验](#在线体验不下载代码) · [快速开始](#快速开始) · [算法清单](#算法清单) · [可视化实验室](#可视化实验室) · [代码示例](#代码示例)
 
 </div>
 
 ---
+
+## ☁️ 在线体验（不下载代码）
+
+不想 clone？把实验室部署成公网链接，点开即玩：
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy/repo/zanezhao0708/DataMiningAlgorithm)
+
+1. 点上面按钮，用 GitHub 账号登录 Render（免费，无需信用卡）
+2. 仓库已内置 [render.yaml](render.yaml)，配置自动填好，直接点 **Apply / Create**
+3. 等 2-3 分钟构建完成，得到你的专属链接 `https://ml-algo-lab.onrender.com`，发给任何人都能直接打开玩
+
+> 免费版 15 分钟无人访问会休眠，冷启动约 10-30 秒，属正常现象。
+> 也支持其他平台：任何能跑 `pip install -r requirements.txt && cd visualization_lab && python main.py` 的容器服务（Hugging Face Spaces、Railway、自有 VPS）均可，服务监听 `$PORT` 即可。
 
 ## ✨ 亮点
 

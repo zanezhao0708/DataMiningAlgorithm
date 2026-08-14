@@ -82,7 +82,9 @@ app.mount("/", StaticFiles(directory="static", html=True), name="static")
 
 
 if __name__ == '__main__':
+    import os
     import uvicorn
+    port = int(os.environ.get("PORT", 8000))  # 云平台（Render等）通过 PORT 注入端口
     print("ML算法可视化实验室启动中...")
-    print("访问 http://localhost:8000 打开实验室")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    print(f"访问 http://localhost:{port} 打开实验室")
+    uvicorn.run(app, host="0.0.0.0", port=port)
