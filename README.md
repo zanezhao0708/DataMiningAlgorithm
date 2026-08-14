@@ -1,6 +1,6 @@
 <div align="center">
 
-# ⛏️ DataMiningAlgorithm
+# DataMiningAlgorithm
 
 **纯 NumPy 手写的 30+ 数据挖掘 / 机器学习算法实现，附带一个交互式可视化实验室**
 
@@ -20,9 +20,9 @@
 
 ---
 
-## ☁️ 在线体验（不下载代码）
+## 在线体验（不下载代码）
 
-👉 **官方演示：[https://datamining-2mqf.onrender.com](https://datamining-2mqf.onrender.com)**（点开即玩，无需安装任何东西；免费版冷启动约 10-30 秒）
+**官方演示：[https://datamining-2mqf.onrender.com](https://datamining-2mqf.onrender.com)**（点开即玩，无需安装任何东西）
 
 也想部署一份自己的？
 
@@ -32,18 +32,15 @@
 2. 仓库已内置 [render.yaml](render.yaml)，配置自动填好，直接点 **Apply / Create**
 3. 等 2-3 分钟构建完成，得到你的专属链接 `https://ml-algo-lab.onrender.com`，发给任何人都能直接打开玩
 
-> 免费版 15 分钟无人访问会休眠，冷启动约 10-30 秒，属正常现象。
-> 也支持其他平台：任何能跑 `pip install -r requirements.txt && cd visualization_lab && python main.py` 的容器服务（Hugging Face Spaces、Railway、自有 VPS）均可，服务监听 `$PORT` 即可。
+## 亮点
 
-## ✨ 亮点
+- **纯 NumPy 实现** —— 无高层框架黑盒，公式到代码一一对应，适合啃原理
+- **交互式可视化实验室** —— 24 个算法"左边调参、右边看效果"，决策边界 / 聚类动画 / 拟合曲线 / 降维投影实时渲染
+- **训练动画回放** —— MLP 逐 epoch 决策边界演化 + 损失曲线，K-Means 质心移动轨迹
+- **模型可解释** —— 决策树 / 随机森林自动渲染树结构 SVG
+- **中文逐行注释** —— 每个文件都是独立可读的算法教程，`python xxx.py` 即可运行自带示例
 
-- 🔬 **纯 NumPy 实现** —— 无高层框架黑盒，公式到代码一一对应，适合啃原理
-- 🎮 **交互式可视化实验室** —— 24 个算法"左边调参、右边看效果"，决策边界 / 聚类动画 / 拟合曲线 / 降维投影实时渲染
-- 🎬 **训练动画回放** —— MLP 逐 epoch 决策边界演化 + 损失曲线，K-Means 质心移动轨迹
-- 🌳 **模型可解释** —— 决策树 / 随机森林自动渲染树结构 SVG
-- 📚 **中文逐行注释** —— 每个文件都是独立可读的算法教程，`python xxx.py` 即可运行自带示例
-
-## 🖥️ 可视化实验室
+## 可视化实验室
 
 ```bash
 pip install -r requirements.txt
@@ -65,7 +62,7 @@ cd visualization_lab && python main.py
 
 更多接口说明见 [visualization_lab/README.md](visualization_lab/README.md)。
 
-## 🚀 快速开始
+## 快速开始
 
 ```bash
 # 1. 克隆
@@ -80,7 +77,7 @@ cd visualization_lab && python main.py   # 打开可视化实验室 → http://l
 python src/traditional_ml/knn.py         # 或直接运行任意算法的自带示例
 ```
 
-## 📚 算法清单
+## 算法清单
 
 ### 分类（10）
 
@@ -144,7 +141,7 @@ python src/traditional_ml/knn.py         # 或直接运行任意算法的自带�
 | 基础三层网络 | [basic_nn.py](src/neural_networks/basic_nn.py) | 784-30-50-3，Sigmoid + Softmax，SGD |
 | MNIST 分类器 | [mnist_classifier.py](src/neural_networks/mnist_classifier.py) | 四层 ReLU 网络，完整反向传播 |
 
-## 💻 代码示例
+## 代码示例
 
 所有算法遵循统一的 `fit / predict / score` 接口：
 
@@ -167,7 +164,7 @@ emb = TSNE(perplexity=20, n_iter=500).fit_transform(X)
 
 每个 `.py` 文件底部都带 `__main__` 自测示例，直接 `python src/traditional_ml/xxx.py` 即可看到运行结果。
 
-## 🗂️ 项目结构
+## 项目结构
 
 ```
 .
@@ -184,7 +181,7 @@ emb = TSNE(perplexity=20, n_iter=500).fit_transform(X)
 └── LICENSE                     # MIT
 ```
 
-## 🛣️ 更新日志
+## 更新日志
 
 - **2026-08-14 (三)**：可视化实验室大升级 —— MLP 逐 epoch 训练动画 + 损失曲线、训练/测试集划分、数据集缩略图、TF Playground 风格 UI；KNN 预测向量化提速 33 倍；网页顶栏新增 GitHub Star 按钮
 - **2026-08-14 (二)**：新增 t-SNE 与可视化实验室；修复 GMM 协方差更新、多项式回归数值发散、SVD 方差贡献率等 bug
@@ -192,7 +189,7 @@ emb = TSNE(perplexity=20, n_iter=500).fit_transform(X)
 - **2024-08-13**：重构项目结构，补齐 MNIST 分类器完整训练代码
 - **初始版本**：基础三层神经网络
 
-## 🤝 贡献
+## 贡献
 
 欢迎 Issue / PR！无论是补算法（如 XGBoost、UMAP）、修 bug 还是改进可视化，都感谢你的贡献。
 
@@ -201,7 +198,7 @@ emb = TSNE(perplexity=20, n_iter=500).fit_transform(X)
 3. 提交改动 `git commit -m 'feat: add amazing feature'`
 4. 推送并发起 Pull Request
 
-## 📄 许可证
+## 许可证
 
 基于 [MIT](LICENSE) 许可证开源，仅供学习与研究使用。
 
@@ -209,6 +206,6 @@ emb = TSNE(perplexity=20, n_iter=500).fit_transform(X)
 
 <div align="center">
 
-如果这个项目帮你理解了某个算法，欢迎点个 Star ⭐ 支持一下！
+如果这个项目帮你理解了某个算法，欢迎点个 Star 支持一下！
 
 </div>
