@@ -22,7 +22,9 @@
 
 ## ☁️ 在线体验（不下载代码）
 
-不想 clone？把实验室部署成公网链接，点开即玩：
+👉 **官方演示：[https://datamining-2mqf.onrender.com](https://datamining-2mqf.onrender.com)**（点开即玩，无需安装任何东西；免费版冷启动约 10-30 秒）
+
+也想部署一份自己的？
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy/repo/zanezhao0708/DataMiningAlgorithm)
 
