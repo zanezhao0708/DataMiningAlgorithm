@@ -46,7 +46,8 @@
 │   │   ├── softmax_regression.py   # Softmax回归
 │   │   ├── collaborative_filtering.py  # 协同过滤推荐
 │   │   ├── spectral_clustering.py  # 谱聚类
-│   │   └── tsne.py                 # t-SNE降维
+│   │   ├── tsne.py                 # t-SNE降维
+│   │   └── mlp.py                  # 多层感知机神经网络
 │   └── utils/                      # 工具函数
 │       └── data_loader.py          # 数据加载与处理工具
 ├── requirements.txt                # Python依赖列表
@@ -772,10 +773,12 @@ cd visualization_lab && python main.py
 
 | 任务 | 能力 |
 |------|------|
-| 分类 | 9 种分类器实时绘制决策边界，树模型附带树结构 SVG |
+| 分类 | 10 种分类器实时绘制决策边界，树模型附带树结构 SVG，MLP 支持逐 epoch 训练动画与损失曲线 |
 | 聚类 | 6 种聚类算法，K-Means 支持迭代动画回放（质心轨迹） |
 | 回归 | 4 种回归算法拟合曲线对比，实时 R² |
 | 降维 | PCA / LDA / SVD / t-SNE 二维投影 |
+
+其他特性：训练/测试集划分（空心点标记测试样本）、数据集缩略图一键切换、TensorFlow Playground 风格 UI。
 
 详见 [visualization_lab/README.md](visualization_lab/README.md)。
 
@@ -789,6 +792,7 @@ zanezhao0708
 
 ## 更新日志
 
+- **2026-08-14(三)**: 可视化实验室大升级——新增 MLP 神经网络（逐epoch训练动画+损失曲线）、训练/测试集划分、数据集缩略图、TF Playground 风格 UI；KNN 预测向量化提速 33 倍
 - **2026-08-14(二)**: 新增 t-SNE 降维算法与 ML算法可视化实验室（FastAPI Web 应用，23 个算法交互式可视化）；修复 GMM 协方差更新、多项式回归数值发散、SVD 方差贡献率等 bug
 - **2026-08-14**: 新增10个算法（K-Medoids、HMM、PageRank、SVD、FP-Growth、梯度提升、LDA、Softmax回归、协同过滤、谱聚类）
 - **2024-08-13**: 重构项目结构，补齐MNIST分类器完整训练代码

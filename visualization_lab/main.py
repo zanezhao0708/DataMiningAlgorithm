@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional
 
-from services.datasets import generate
+from services.datasets import generate, previews
 from services.algorithms import get_catalog, run
 
 app = FastAPI(title="ML算法可视化实验室")
@@ -33,12 +33,22 @@ class RunRequest(BaseModel):
     params: dict = {}
     X: list
     y: Optional[list] = None
+    test_ratio: float = 0.2
 
 
 @app.get("/api/algorithms")
 def api_catalog():
     """返回全部算法目录"""
     return get_catalog()
+
+
+@app.get("/api/previews/{task}")
+def api_previews(task: str):
+    """返回某任务下所有数据集的预览数据（缩略图用）"""
+    try:
+        return previews(task)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/api/dataset")
@@ -58,7 +68,8 @@ def api_run(req: RunRequest):
     try:
         # 吞掉算法内部print，避免污染日志
         with contextlib.redirect_stdout(io.StringIO()):
-            result = run(req.task, req.algorithm, req.params, req.X, req.y)
+            result = run(req.task, req.algorithm, req.params, req.X, req.y,
+                         test_ratio=req.test_ratio)
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

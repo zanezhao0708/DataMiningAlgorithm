@@ -1,83 +1,88 @@
-/* ===== ML算法可视化实验室 · 前端主逻辑 ===== */
+/* ===== ML算法可视化实验室 · 前端主逻辑（TF Playground 风格） ===== */
 
-// 全局状态
 const state = {
     task: 'classification',
     dataset: 'moons',
     nClasses: 3,
     nSamples: 300,
     noise: 0.15,
+    testRatio: 0.2,
     algorithm: null,
-    catalog: null,      // 算法目录 {task: [{id, name, params, ...}]}
+    catalog: null,
+    previews: null,     // 数据集缩略图数据
     data: null,         // {X, y}
-    result: null,       // 最近一次运行结果
-    // 聚类动画
-    anim: { frames: [], frame: 0, playing: false, timer: null, t0: 0 },
+    result: null,
+    elapsed: 0,
+    anim: { frames: [], frame: 0, playing: false, timer: null, type: null },
     abort: null,
+    pendingRun: null,   // 请求合并：防止滑块拖动时请求堆积
 };
 
-// 类别配色（最多8类 + 噪声灰）
-const COLORS = ['#f85149', '#3fb950', '#58a6ff', '#d29922', '#bc8cff', '#f778ba', '#39c5cf', '#ffa657'];
-const NOISE_COLOR = '#6e7681';
+// 类别配色（TF Playground 橙蓝配色）
+const COLORS = ['#e6850f', '#1a73e8', '#34a853', '#9c27b0', '#f06292', '#00897b', '#c62828', '#f9a825'];
+const NOISE_COLOR = '#9e9e9e';
 const $ = (id) => document.getElementById(id);
 
 // ===================== 初始化 =====================
 async function init() {
-    // 拉取算法目录
     const res = await fetch('/api/algorithms');
     state.catalog = await res.json();
     const total = Object.values(state.catalog).reduce((s, l) => s + l.length, 0);
     $('algo-count').textContent = `${total} 个算法`;
 
     bindUI();
+    await loadPreviews();
     renderAlgoList();
-    await regenerateData(true);
-    // 默认选中第一个算法并运行
-    const first = state.catalog[state.task][0];
-    selectAlgorithm(first.id);
+    await regenerateData(false);
+    selectAlgorithm(state.catalog[state.task][0].id);
 }
 
 function bindUI() {
-    // 任务tab
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', () => {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             tab.classList.add('active');
             state.task = tab.dataset.task;
-            renderDatasetOptions();
-            renderAlgoList();
             stopAnim();
             hideTree();
             $('anim-bar').hidden = true;
-            selectAlgorithm(state.catalog[state.task][0].id);
-            regenerateData(true);
+            $('chart-panel').hidden = true;
+            $('control-testratio').hidden = state.task !== 'classification';
+            loadPreviews().then(() => {
+                renderAlgoList();
+                selectAlgorithm(state.catalog[state.task][0].id);
+                regenerateData(true);
+            });
         });
     });
 
-    // 数据集控件
-    $('dataset-select').addEventListener('change', e => {
-        state.dataset = e.target.value;
-        regenerateData(true);
-    });
     $('param-nsamples').addEventListener('input', e => {
         $('val-nsamples').textContent = e.target.value;
         state.nSamples = +e.target.value;
-        debounceRun();
+        scheduleRerun();
     });
     $('param-noise').addEventListener('input', e => {
         $('val-noise').textContent = (+e.target.value).toFixed(2);
         state.noise = +e.target.value;
-        debounceRun();
+        scheduleRerun();
     });
     $('param-nclasses').addEventListener('input', e => {
         $('val-nclasses').textContent = e.target.value;
         state.nClasses = +e.target.value;
-        debounceRun();
+        scheduleRerun();
     });
-    $('btn-regen').addEventListener('click', () => regenerateData(true));
-    $('btn-run').addEventListener('click', () => runAlgorithm());
+    $('param-testratio').addEventListener('input', e => {
+        state.testRatio = +e.target.value;
+        $('val-testratio').textContent = Math.round(state.testRatio * 100) + '%';
+        scheduleRerun();
+    });
+    $('btn-reset').addEventListener('click', () => regenerateData(true));
+    $('btn-play').addEventListener('click', () => {
+        // 播放按钮：有动画则播放，否则重跑
+        if (state.anim.frames.length) toggleAnim();
+        else runAlgorithm();
+    });
 
-    // 动画控制
     $('anim-play').addEventListener('click', toggleAnim);
     $('anim-prev').addEventListener('click', () => stepAnim(-1));
     $('anim-next').addEventListener('click', () => stepAnim(1));
@@ -88,28 +93,87 @@ function bindUI() {
     });
 }
 
-// ===================== 渲染侧栏 =====================
-function renderDatasetOptions() {
-    const sel = $('dataset-select');
-    sel.innerHTML = '';
-    const options = {
-        classification: [['moons', '双月牙'], ['circles', '同心圆'], ['xor', '异或象限'],
-                         ['spiral', '双螺旋'], ['blobs2', '双高斯团']],
-        clustering: [['blobs', '高斯团块'], ['moons', '双月牙'], ['circles', '同心圆']],
-        regression: [['sin', '正弦波形'], ['linear', '线性']],
-        dim_reduction: [['highdim', '高维高斯(10维)']],
-    }[state.task];
-
-    for (const [id, name] of options) {
-        const opt = document.createElement('option');
-        opt.value = id; opt.textContent = name;
-        sel.appendChild(opt);
-    }
-    state.dataset = options[0][0];
-    // 降维任务显示类别数控制，其他按需
-    $('control-nclasses').hidden = !(state.task === 'dim_reduction' || state.task === 'clustering' && state.dataset === 'blobs');
+// 请求合并：滑块连续拖动时只执行最后一次
+function scheduleRerun() {
+    clearTimeout(state.pendingRun);
+    state.pendingRun = setTimeout(async () => {
+        await regenerateData(false);
+        if (state.algorithm) runAlgorithm();
+    }, 300);
 }
 
+// ===================== 数据集缩略图 =====================
+async function loadPreviews() {
+    const res = await fetch(`/api/previews/${state.task}`);
+    state.previews = await res.json();
+    renderDatasetGrid();
+}
+
+function renderDatasetGrid() {
+    const grid = $('dataset-grid');
+    grid.innerHTML = '';
+    const names = {
+        classification: { moons: '双月牙', circles: '同心圆', xor: '异或', spiral: '双螺旋', blobs2: '双团块' },
+        clustering: { blobs: '团块', moons: '月牙', circles: '同心圆' },
+        regression: { sin: '正弦', linear: '线性' },
+        dim_reduction: { highdim: '高维' },
+    }[state.task] || {};
+
+    for (const [id, pv] of Object.entries(state.previews)) {
+        const div = document.createElement('div');
+        div.className = 'ds-thumb' + (id === state.dataset ? ' active' : '');
+        div.dataset.id = id;
+
+        const cv = document.createElement('canvas');
+        cv.width = 88; cv.height = 56;
+        div.appendChild(cv);
+        const label = document.createElement('div');
+        label.className = 'ds-name';
+        label.textContent = names[id] || id;
+        div.appendChild(label);
+
+        div.addEventListener('click', () => {
+            state.dataset = id;
+            document.querySelectorAll('.ds-thumb').forEach(el =>
+                el.classList.toggle('active', el.dataset.id === id));
+            regenerateData(true);
+        });
+        grid.appendChild(div);
+        drawThumb(cv, pv.X, pv.y);
+    }
+    // 确保当前选中有效
+    if (!state.previews[state.dataset]) {
+        state.dataset = Object.keys(state.previews)[0];
+        document.querySelector('.ds-thumb')?.classList.add('active');
+    }
+    $('control-nclasses').hidden = !(state.task === 'dim_reduction' ||
+        (state.task === 'clustering' && state.dataset === 'blobs'));
+}
+
+function drawThumb(cv, X, y) {
+    const ctx = cv.getContext('2d');
+    const w = cv.width, h = cv.height;
+    ctx.clearRect(0, 0, w, h);
+    if (!X || !X.length) return;
+
+    const xs = X.map(p => p[0]), ys = X.map(p => p[1]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs);
+    const y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const dx = (x1 - x0) || 1, dy = (y1 - y0) || 1;
+    const scale = Math.min((w - 8) / dx, (h - 8) / dy);
+    const ox = (w - dx * scale) / 2, oy = (h - dy * scale) / 2;
+
+    for (let i = 0; i < X.length; i++) {
+        const px = ox + (X[i][0] - x0) * scale;
+        const py = h - (oy + (X[i][1] - y0) * scale);
+        ctx.beginPath();
+        ctx.arc(px, py, 1.6, 0, Math.PI * 2);
+        ctx.fillStyle = COLORS[(y[i] ?? 0) % COLORS.length];
+        ctx.fill();
+    }
+}
+
+// ===================== 渲染侧栏 =====================
 function renderAlgoList() {
     const list = $('algo-list');
     list.innerHTML = '';
@@ -128,26 +192,24 @@ function renderAlgoList() {
 
 function selectAlgorithm(id) {
     state.algorithm = id;
-    document.querySelectorAll('.algo-item').forEach(el => {
-        el.classList.toggle('active', el.dataset.id === id);
-    });
+    document.querySelectorAll('.algo-item').forEach(el =>
+        el.classList.toggle('active', el.dataset.id === id));
     renderParams();
     runAlgorithm();
 }
 
-// 渲染算法参数滑块
 function renderParams() {
     const algo = state.catalog[state.task].find(a => a.id === state.algorithm);
     const box = $('param-container');
     box.innerHTML = '';
     if (!algo) return;
-
     $('stage-title').textContent = algo.name;
 
     for (const p of algo.params) {
+        const c = document.createElement('div');
+        c.className = 'control';
+        c.dataset.key = p.key;
         if (p.type === 'select') {
-            const c = document.createElement('div');
-            c.className = 'control';
             c.innerHTML = `<label>${p.label}</label>`;
             const sel = document.createElement('select');
             for (const o of p.options) {
@@ -158,34 +220,30 @@ function renderParams() {
             }
             sel.addEventListener('change', () => runAlgorithm());
             c.appendChild(sel);
-            box.appendChild(c);
         } else {
-            const c = document.createElement('div');
-            c.className = 'control';
-            c.innerHTML = `<label>${p.label} <span class="val" id="pv-${p.key}">${p.default}</span></label>
-                           <input type="range" min="${p.min}" max="${p.max}"
-                                  step="${p.step}" value="${p.default}">`;
+            const fmt = v => p.step < 1 ? (+v).toFixed(String(p.step).split('.')[1].length) : v;
+            c.innerHTML = `<label>${p.label} <span class="val" id="pv-${p.key}">${fmt(p.default)}</span></label>
+                           <input type="range" min="${p.min}" max="${p.max}" step="${p.step}" value="${p.default}">`;
             const input = c.querySelector('input');
-            const fmt = (v) => p.step < 1 ? (+v).toFixed(String(p.step).split('.')[1].length) : v;
-            input.addEventListener('input', () => {
-                $('pv-' + p.key).textContent = fmt(input.value);
-            });
+            input.addEventListener('input', () => { $('pv-' + p.key).textContent = fmt(input.value); });
             input.addEventListener('change', () => runAlgorithm());
-            box.appendChild(c);
         }
+        box.appendChild(c);
     }
 }
 
-// 收集当前算法参数
 function collectParams() {
     const algo = state.catalog[state.task].find(a => a.id === state.algorithm);
     const params = {};
-    for (const p of (algo ? algo.params : [])) {
-        params[p.key] = p.type === 'select' ? p.default : p.default;
-    }
-    // 从DOM读取实际值（renderParams渲染的默认值）
-    document.querySelectorAll('#param-container input[type=range]').forEach(input => {
-        params[input.closest('.control').querySelector('.val').id.replace('pv-', '')] = +input.value;
+    for (const p of (algo ? algo.params : [])) params[p.key] = p.default;
+    // 按 data-key 精确读取每个控件的当前值
+    document.querySelectorAll('#param-container .control').forEach(c => {
+        const key = c.dataset.key;
+        if (!key) return;
+        const range = c.querySelector('input[type=range]');
+        const sel = c.querySelector('select');
+        if (range) params[key] = +range.value;
+        else if (sel) params[key] = sel.value;
     });
     return params;
 }
@@ -206,21 +264,11 @@ async function regenerateData(withRun) {
     else draw();
 }
 
-let debounceTimer = null;
-function debounceRun() {
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(async () => {
-        await regenerateData(false);
-        if (state.algorithm) runAlgorithm();
-    }, 350);
-}
-
 async function runAlgorithm() {
     if (!state.algorithm || !state.data) return;
     if (state.abort) state.abort.abort();
     state.abort = new AbortController();
 
-    $('btn-run').disabled = true;
     $('loading').hidden = false;
     const t0 = performance.now();
 
@@ -229,11 +277,9 @@ async function runAlgorithm() {
             task: state.task, algorithm: state.algorithm,
             params: collectParams(),
             X: state.data.X,
-            y: state.task === 'clustering' ? state.data.X.map(() => 0) : state.data.y,
+            y: state.task === 'clustering' ? null : state.data.y,
+            test_ratio: state.testRatio,
         };
-        // 聚类无需标签，传null
-        if (state.task === 'clustering') body.y = null;
-
         const res = await fetch('/api/run', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body), signal: state.abort.signal,
@@ -246,22 +292,23 @@ async function runAlgorithm() {
         state.elapsed = performance.now() - t0;
 
         stopAnim();
-        const algo = state.catalog[state.task].find(a => a.id === state.algorithm);
-
-        // 聚类动画
-        if (state.task === 'clustering' && state.result.frames) {
+        // 动画帧（K-Means 聚类 或 MLP 分类）
+        if (state.result.frames && state.result.frames.length) {
             state.anim.frames = state.result.frames;
-            state.anim.frame = 0;
+            state.anim.frame = state.result.frames.length - 1;  // 默认显示最终状态
+            state.anim.type = state.task === 'clustering' ? 'kmeans' : 'mlp';
             $('anim-bar').hidden = false;
             $('anim-slider').max = state.result.frames.length - 1;
-            $('anim-slider').value = 0;
-            playAnim();
+            $('anim-slider').value = state.anim.frame;
         } else {
             $('anim-bar').hidden = true;
-            draw();
         }
+        draw();
 
-        // 决策树
+        // 损失曲线（MLP）
+        if (state.result.history) drawLossChart(state.result.history);
+        else $('chart-panel').hidden = true;
+
         if (state.result.tree) renderTree(state.result.tree);
         else hideTree();
 
@@ -269,10 +316,9 @@ async function runAlgorithm() {
     } catch (e) {
         if (e.name !== 'AbortError') {
             $('metrics').innerHTML = `<div class="metric"><div class="m-label">错误</div>
-                <div class="m-value" style="color:var(--danger);font-size:12px">${e.message.slice(0, 40)}</div></div>`;
+                <div class="m-value" style="color:var(--danger);font-size:11px">${e.message.slice(0, 40)}</div></div>`;
         }
     } finally {
-        $('btn-run').disabled = false;
         $('loading').hidden = true;
     }
 }
@@ -284,7 +330,10 @@ function renderMetrics() {
     const add = (label, value) => cards.push(
         `<div class="metric"><div class="m-label">${label}</div><div class="m-value">${value}</div></div>`);
 
-    if (state.task === 'classification') add('准确率', (r.accuracy * 100).toFixed(1) + '%');
+    if (state.task === 'classification') {
+        add('训练准确率', (r.accuracy * 100).toFixed(1) + '%');
+        if (r.test_accuracy != null) add('测试准确率', (r.test_accuracy * 100).toFixed(1) + '%');
+    }
     if (state.task === 'clustering') {
         add('轮廓系数', r.silhouette.toFixed(3));
         add('发现簇数', r.n_found);
@@ -311,7 +360,6 @@ function setupCanvas() {
     return { w: rect.width, h: rect.height };
 }
 
-// 等比坐标变换
 function makeTransform(X, w, h, padding = 20) {
     const xs = X.map(p => p[0]), ys = X.map(p => p[1]);
     const x0 = Math.min(...xs), x1 = Math.max(...xs);
@@ -321,15 +369,13 @@ function makeTransform(X, w, h, padding = 20) {
     const ox = (w - dx * scale) / 2, oy = (h - dy * scale) / 2;
     return {
         sx: x => ox + (x - x0) * scale,
-        sy: y => h - (oy + (y - y0) * scale),  // y轴翻转
-        x0, x1, y0, y1, scale,
-        inv: (px, py) => [x0 + (px - ox) / scale, y0 + (h - py - oy) / scale],
+        sy: y => h - (oy + (y - y0) * scale),
     };
 }
 
-function drawGrid(t) {
+function drawGrid() {
     const w = canvas.clientWidth, h = canvas.clientHeight;
-    ctx.strokeStyle = 'rgba(48, 54, 61, .5)';
+    ctx.strokeStyle = 'rgba(0,0,0,.04)';
     ctx.lineWidth = 1;
     for (let i = 0; i <= 8; i++) {
         const gx = (w / 8) * i, gy = (h / 8) * i;
@@ -338,18 +384,26 @@ function drawGrid(t) {
     }
 }
 
-function drawPoints(X, y, t, r = 5) {
+// 测试集点用空心标记区分
+function drawPoints(X, y, t, testSet, r = 5) {
     for (let i = 0; i < X.length; i++) {
         const px = t.sx(X[i][0]), py = t.sy(X[i][1]);
+        const isTest = testSet && testSet.has(i);
         ctx.beginPath();
         ctx.arc(px, py, r, 0, Math.PI * 2);
-        ctx.fillStyle = COLORS[(y[i] ?? 0) % COLORS.length];
-        ctx.globalAlpha = 0.9;
-        ctx.fill();
-        ctx.globalAlpha = 1;
-        ctx.strokeStyle = '#0d1117';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
+        if (isTest) {
+            ctx.fillStyle = '#fff';
+            ctx.fill();
+            ctx.strokeStyle = COLORS[(y[i] ?? 0) % COLORS.length];
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        } else {
+            ctx.fillStyle = COLORS[(y[i] ?? 0) % COLORS.length];
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
     }
 }
 
@@ -360,52 +414,58 @@ function draw() {
     if (!state.data) return;
 
     const X = state.data.X;
-
     if (state.task === 'classification') drawClassification(X, w, h);
-    else if (state.task === 'clustering') drawClusteringFrame(X, w, h);
+    else if (state.task === 'clustering') drawClustering(X, w, h);
     else if (state.task === 'regression') drawRegression(X, w, h);
     else if (state.task === 'dim_reduction') drawEmbedding(X, w, h);
 }
 
-// ---- 分类：决策边界 ----
+// ---- 分类：决策边界（支持MLP动画帧） ----
 function drawClassification(X, w, h) {
     const t = makeTransform(X, w, h);
     const r = state.result;
+    const testSet = r && r.test_indices ? new Set(r.test_indices) : null;
 
-    if (r && r.grid) {
-        // 决策边界网格填色
+    // MLP动画：使用当前帧的网格
+    let grid = r ? r.grid : null;
+    let ranges = r ? [r.x_range, r.y_range] : null;
+    if (r && r.frames && state.anim.type === 'mlp') {
+        const frame = r.frames[state.anim.frame];
+        grid = frame.grid;
+        $('anim-label').textContent = `epoch ${frame.epoch}`;
+        $('anim-slider').value = state.anim.frame;
+    }
+
+    if (grid && ranges) {
         const g = r.grid_size;
         const cw = w / g, ch = h / g;
-        // 扩展绘制范围（边界超出数据范围0.5）
-        const [gx0, gx1] = r.x_range, [gy0, gy1] = r.y_range;
+        const [gx0, gx1] = ranges[0], [gy0, gy1] = ranges[1];
         for (let row = 0; row < g; row++) {
             for (let col = 0; col < g; col++) {
-                const label = r.grid[row * g + col];
+                const label = grid[row * g + col];
                 const wx = gx0 + (gx1 - gx0) * (col + 0.5) / g;
                 const wy = gy0 + (gy1 - gy0) * (row + 0.5) / g;
                 const px = t.sx(wx), py = t.sy(wy);
                 ctx.fillStyle = COLORS[label % COLORS.length];
-                ctx.globalAlpha = 0.13;
+                ctx.globalAlpha = 0.16;
                 ctx.fillRect(px - cw, py - ch, cw * 2 + 1, ch * 2 + 1);
             }
         }
         ctx.globalAlpha = 1;
     }
-    drawPoints(X, state.data.y, t);
+    drawPoints(X, state.data.y, t, testSet);
 }
 
-// ---- 聚类：支持动画帧 ----
-function drawClusteringFrame(X, w, h) {
+// ---- 聚类：支持K-Means动画帧 ----
+function drawClustering(X, w, h) {
     const anim = state.anim;
     const r = state.result;
 
-    if (r && r.frames && anim.frames.length) {
-        // 当前帧质心 + 按最近质心分配颜色
+    if (r && r.frames && anim.frames.length && anim.type === 'kmeans') {
         const frame = anim.frames[anim.frame];
         const centroids = frame.centroids;
         const t = makeTransform(X, w, h);
 
-        // 数据点按最近质心着色
         for (let i = 0; i < X.length; i++) {
             let best = 0, bd = Infinity;
             for (let c = 0; c < centroids.length; c++) {
@@ -416,16 +476,14 @@ function drawClusteringFrame(X, w, h) {
             ctx.beginPath();
             ctx.arc(px, py, 5, 0, Math.PI * 2);
             ctx.fillStyle = COLORS[best % COLORS.length];
-            ctx.globalAlpha = 0.9;
             ctx.fill();
-            ctx.globalAlpha = 1;
-            ctx.strokeStyle = '#0d1117';
-            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 1;
             ctx.stroke();
         }
 
-        // 画质心轨迹（历史帧的连线）
-        ctx.strokeStyle = 'rgba(230, 237, 243, .3)';
+        // 质心轨迹
+        ctx.strokeStyle = 'rgba(0,0,0,.25)';
         ctx.setLineDash([4, 4]);
         for (let c = 0; c < centroids.length; c++) {
             ctx.beginPath();
@@ -442,8 +500,8 @@ function drawClusteringFrame(X, w, h) {
         for (let c = 0; c < centroids.length; c++) {
             const px = t.sx(centroids[c][0]), py = t.sy(centroids[c][1]);
             ctx.beginPath();
-            ctx.arc(px, py, 10, 0, Math.PI * 2);
-            ctx.fillStyle = '#0d1117';
+            ctx.arc(px, py, 9, 0, Math.PI * 2);
+            ctx.fillStyle = '#fff';
             ctx.fill();
             ctx.strokeStyle = COLORS[c % COLORS.length];
             ctx.lineWidth = 3;
@@ -457,7 +515,7 @@ function drawClusteringFrame(X, w, h) {
 
     // 静态聚类结果
     const t = makeTransform(X, w, h);
-    const labels = r ? r.labels : state.data.X.map(() => 0);
+    const labels = r ? r.labels : X.map(() => 0);
     const noise = r ? (r.noise || []) : [];
 
     for (let i = 0; i < X.length; i++) {
@@ -465,19 +523,17 @@ function drawClusteringFrame(X, w, h) {
         ctx.beginPath();
         ctx.arc(px, py, 5, 0, Math.PI * 2);
         ctx.fillStyle = noise[i] ? NOISE_COLOR : COLORS[labels[i] % COLORS.length];
-        ctx.globalAlpha = 0.9;
         ctx.fill();
-        ctx.globalAlpha = 1;
-        ctx.strokeStyle = '#0d1117';
-        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1;
         ctx.stroke();
     }
     if (r && r.centers) {
         for (let c = 0; c < r.centers.length; c++) {
             const px = t.sx(r.centers[c][0]), py = t.sy(r.centers[c][1]);
             ctx.beginPath();
-            ctx.arc(px, py, 10, 0, Math.PI * 2);
-            ctx.fillStyle = '#0d1117';
+            ctx.arc(px, py, 9, 0, Math.PI * 2);
+            ctx.fillStyle = '#fff';
             ctx.fill();
             ctx.strokeStyle = COLORS[c % COLORS.length];
             ctx.lineWidth = 3;
@@ -488,30 +544,27 @@ function drawClusteringFrame(X, w, h) {
 
 // ---- 回归：拟合曲线 ----
 function drawRegression(X, w, h) {
-    // 回归数据是一维特征，用(特征x, 目标y)构造二维点计算坐标变换
     const pts = X.map((p, i) => [p[0], state.data.y[i]]);
     const t = makeTransform(pts, w, h);
     const r = state.result;
 
-    // 数据点
     for (let i = 0; i < pts.length; i++) {
         const px = t.sx(pts[i][0]), py = t.sy(pts[i][1]);
         ctx.beginPath();
         ctx.arc(px, py, 4, 0, Math.PI * 2);
-        ctx.fillStyle = '#58a6ff';
-        ctx.globalAlpha = 0.75;
+        ctx.fillStyle = '#1a73e8';
+        ctx.globalAlpha = 0.7;
         ctx.fill();
         ctx.globalAlpha = 1;
     }
 
-    // 拟合曲线
     if (r && r.curve) {
         ctx.beginPath();
         r.curve.forEach(([x, y], i) => {
             const px = t.sx(x), py = t.sy(y);
             i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
         });
-        ctx.strokeStyle = '#ffa657';
+        ctx.strokeStyle = '#e6850f';
         ctx.lineWidth = 3;
         ctx.lineJoin = 'round';
         ctx.stroke();
@@ -521,9 +574,58 @@ function drawRegression(X, w, h) {
 // ---- 降维：投影散点 ----
 function drawEmbedding(X, w, h) {
     const r = state.result;
-    if (!r || !r.embedding) return drawPoints(X, state.data.y.map(() => 0), makeTransform(X, w, h));
+    if (!r || !r.embedding) return;
     const t = makeTransform(r.embedding, w, h, 30);
-    drawPoints(r.embedding, state.data.y, t, 6);
+    drawPoints(r.embedding, state.data.y, t, null, 6);
+}
+
+// ===================== 损失曲线 =====================
+function drawLossChart(history) {
+    const panel = $('chart-panel');
+    panel.hidden = false;
+    const cv = $('loss-canvas');
+    const dpr = window.devicePixelRatio || 1;
+    const w = cv.parentElement.clientWidth - 24;
+    cv.width = w * dpr;
+    cv.height = 120 * dpr;
+    cv.style.height = '120px';
+    const c = cv.getContext('2d');
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, w, 120);
+
+    const losses = history.map(h => h.loss);
+    const accs = history.map(h => h.accuracy);
+    const maxL = Math.max(...losses), minL = Math.min(...losses);
+    const pad = 6;
+
+    // 损失曲线（橙）
+    c.beginPath();
+    losses.forEach((l, i) => {
+        const x = pad + (w - pad * 2) * i / (losses.length - 1);
+        const y = pad + (108 - pad) * (1 - (l - minL) / (maxL - minL + 1e-9));
+        i === 0 ? c.moveTo(x, y) : c.lineTo(x, y);
+    });
+    c.strokeStyle = '#e6850f';
+    c.lineWidth = 2;
+    c.stroke();
+
+    // 准确率曲线（蓝）
+    c.beginPath();
+    accs.forEach((a, i) => {
+        const x = pad + (w - pad * 2) * i / (accs.length - 1);
+        const y = pad + (108 - pad) * (1 - a);
+        i === 0 ? c.moveTo(x, y) : c.lineTo(x, y);
+    });
+    c.strokeStyle = '#1a73e8';
+    c.lineWidth = 2;
+    c.stroke();
+
+    // 图例
+    c.font = '10px sans-serif';
+    c.fillStyle = '#e6850f';
+    c.fillText(`损失 ${losses[losses.length - 1].toFixed(3)}`, 8, 12);
+    c.fillStyle = '#1a73e8';
+    c.fillText(`准确率 ${(accs[accs.length - 1] * 100).toFixed(1)}%`, 90, 12);
 }
 
 // ===================== 动画控制 =====================
@@ -531,27 +633,31 @@ function playAnim() {
     if (state.anim.playing) return;
     state.anim.playing = true;
     $('anim-play').textContent = '⏸';
-    const stepMs = 500;
+    $('btn-play').textContent = '⏸';
     state.anim.timer = setInterval(() => {
         state.anim.frame++;
         if (state.anim.frame >= state.anim.frames.length - 1) {
-            stopAnim();
             state.anim.frame = state.anim.frames.length - 1;
+            stopAnim();
         }
         draw();
-    }, stepMs);
+        // MLP动画同步损失曲线进度
+        if (state.anim.type === 'mlp' && state.result.history) {
+            drawLossChart(state.result.history.slice(0, state.anim.frame + 2));
+        }
+    }, state.anim.type === 'mlp' ? 150 : 400);
 }
 
 function stopAnim() {
     state.anim.playing = false;
     $('anim-play').textContent = '▶';
+    $('btn-play').textContent = '▶';
     if (state.anim.timer) { clearInterval(state.anim.timer); state.anim.timer = null; }
 }
 
 function toggleAnim() {
-    if (state.anim.playing) {
-        stopAnim();
-    } else {
+    if (state.anim.playing) stopAnim();
+    else {
         if (state.anim.frame >= state.anim.frames.length - 1) state.anim.frame = 0;
         playAnim();
     }
@@ -569,7 +675,6 @@ function renderTree(root) {
     const container = $('tree-container');
     panel.hidden = false;
 
-    // 布局：统计叶节点，叶子均匀分布x
     let leafX = 0;
     const NODE_W = 76, NODE_H = 34, GAP_X = 20, GAP_Y = 64;
 
@@ -600,7 +705,6 @@ function renderTree(root) {
         if (!node.leaf) {
             drawNode(node.left);
             drawNode(node.right);
-            // 边
             for (const [child, label] of [[node.left, '≤'], [node.right, '>']]) {
                 const path = document.createElementNS(svgNS, 'path');
                 const x1 = node._x + NODE_W / 2, y1 = node._y + NODE_H;
@@ -608,7 +712,6 @@ function renderTree(root) {
                 const my = (y1 + y2) / 2;
                 path.setAttribute('d', `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`);
                 path.setAttribute('class', 'tedge');
-                path.setAttribute('stroke', colorOf(0) === colorOf(1) ? '#30363d' : 'rgba(88,166,255,.35)');
                 svg.appendChild(path);
                 const text = document.createElementNS(svgNS, 'text');
                 text.setAttribute('x', (x1 + x2) / 2);
@@ -624,7 +727,7 @@ function renderTree(root) {
         const rect = document.createElementNS(svgNS, 'rect');
         rect.setAttribute('x', node._x); rect.setAttribute('y', node._y);
         rect.setAttribute('width', NODE_W); rect.setAttribute('height', NODE_H);
-        rect.setAttribute('rx', 6);
+        rect.setAttribute('rx', 5);
         if (node.leaf) rect.setAttribute('stroke', colorOf(node.value));
         g.appendChild(rect);
 

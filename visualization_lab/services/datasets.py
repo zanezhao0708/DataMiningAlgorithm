@@ -123,6 +123,25 @@ CLUSTERING_DATASETS = {
 }
 
 
+def previews(task, n_samples=150, seed=7):
+    """批量生成某任务下所有数据集的预览数据（供前端缩略图）"""
+    registry = {
+        'classification': CLASSIFICATION_DATASETS,
+        'clustering': CLUSTERING_DATASETS,
+        'regression': {'sin': None, 'linear': None},
+        'dim_reduction': {'highdim': None},
+    }.get(task, {})
+
+    out = {}
+    for ds_id in registry:
+        try:
+            X, y, _, _ = generate(ds_id, task, n_samples, 0.15, 3, seed)
+            out[ds_id] = {'X': X, 'y': y}
+        except ValueError:
+            continue
+    return out
+
+
 def generate(dataset_id, task, n_samples, noise, n_classes=3, seed=None):
     """统一的数据集生成入口"""
     if task == 'classification':

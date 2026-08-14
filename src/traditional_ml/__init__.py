@@ -28,6 +28,7 @@ from .softmax_regression import SoftmaxRegression
 from .collaborative_filtering import CollaborativeFiltering
 from .spectral_clustering import SpectralClustering
 from .tsne import TSNE
+from .mlp import MLP
 
 __all__ = [
     'KNN',
@@ -58,5 +59,6 @@ __all__ = [
     'SoftmaxRegression',
     'CollaborativeFiltering',
     'SpectralClustering',
-    'TSNE'
+    'TSNE',
+    'MLP'
 ]

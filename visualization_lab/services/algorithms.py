@@ -33,6 +33,7 @@ from traditional_ml.pca import PCA
 from traditional_ml.lda import LDA
 from traditional_ml.svd import SVD
 from traditional_ml.tsne import TSNE
+from traditional_ml.mlp import MLP
 
 GRID_SIZE = 50  # 决策边界网格分辨率
 
@@ -101,51 +102,88 @@ CLASSIFIERS = {
         'build': lambda p: SoftmaxRegression(learning_rate=p['learning_rate'],
                                              n_iterations=p['n_iterations']),
     },
+    'mlp': {
+        'name': '神经网络 MLP',
+        'animated': True,
+        'params': [{'key': 'arch', 'label': '网络结构', 'type': 'select',
+                    'options': ['单层', '双层'], 'default': '双层'},
+                   _slider('hidden', '隐藏层宽度', 2, 16, 8),
+                   _slider('learning_rate', '学习率', 0.01, 0.5, 0.05, 0.01),
+                   _slider('n_epochs', '训练轮数', 50, 500, 300, 50)],
+        'build': lambda p: MLP(
+            hidden_layers=(p['hidden'], p['hidden']) if p.get('arch') == '双层' else (p['hidden'],),
+            learning_rate=p['learning_rate'],
+            n_epochs=p['n_epochs'], random_state=42),
+    },
 }
 
 # 这些算法要求标签为 ±1（内部按符号判断）
 PM1_ALGOS = {'svm', 'perceptron', 'adaboost'}
 
 
-def run_classification(algorithm, params, X, y):
-    """训练分类器并生成决策边界网格"""
+def _train_test_split(X, y, test_ratio, seed=42):
+    """分层随机划分训练集与测试集"""
+    rng = np.random.RandomState(seed)
+    n = len(y)
+    idx = rng.permutation(n)
+    n_test = max(1, int(n * test_ratio))
+    test_idx, train_idx = idx[:n_test], idx[n_test:]
+    return X[train_idx], X[test_idx], y[train_idx], y[test_idx], test_idx
+
+
+def run_classification(algorithm, params, X, y, test_ratio=0.2):
+    """训练分类器并生成决策边界网格，支持训练/测试划分与MLP动画"""
     spec = CLASSIFIERS[algorithm]
     model = spec['build'](params)
 
+    X = np.asarray(X, dtype=float)
     y = np.asarray(y)
     classes = np.unique(y).tolist()
 
+    # 训练/测试划分
+    X_tr, X_te, y_tr, y_te, test_idx = _train_test_split(X, y, test_ratio)
+
     # ±1 算法：转换标签并在预测后映射回来
     if algorithm in PM1_ALGOS:
-        y_fit = np.where(y == classes[0], -1, 1)
+        y_fit = np.where(y_tr == classes[0], -1, 1)
     else:
-        y_fit = y.astype(int)
+        y_fit = y_tr.astype(int)
 
-    model.fit(np.asarray(X), y_fit)
+    model.fit(X_tr, y_fit)
 
+    # 决策边界网格
     x_min, x_max = X[:, 0].min() - 0.5, X[:, 0].max() + 0.5
     y_min, y_max = X[:, 1].min() - 0.5, X[:, 1].max() + 0.5
     xs = np.linspace(x_min, x_max, GRID_SIZE)
     ys = np.linspace(y_min, y_max, GRID_SIZE)
     mesh = np.array([[a, b] for b in ys for a in xs])
 
-    pred = model.predict(mesh).ravel().astype(int)
-    if algorithm in PM1_ALGOS:
-        pred = np.where(pred == -1, 0, 1)
+    def _map(pred):
+        pred = pred.ravel().astype(int)
+        if algorithm in PM1_ALGOS:
+            pred = np.where(pred == -1, 0, 1)
+        return pred
 
-    train_pred = model.predict(np.asarray(X)).ravel().astype(int)
-    if algorithm in PM1_ALGOS:
-        train_pred = np.where(train_pred == -1, 0, 1)
-    accuracy = float(np.mean(train_pred == y))
+    pred = _map(model.predict(mesh))
+    train_pred = _map(model.predict(X_tr))
+    test_pred = _map(model.predict(X_te))
 
     result = {
         'grid': pred.tolist(),
         'grid_size': GRID_SIZE,
         'x_range': [float(x_min), float(x_max)],
         'y_range': [float(y_min), float(y_max)],
-        'accuracy': accuracy,
+        'accuracy': float(np.mean(train_pred == y_tr)),
+        'test_accuracy': float(np.mean(test_pred == y_te)),
+        'test_indices': test_idx.tolist(),
         'n_classes': len(classes),
     }
+
+    # MLP：生成逐epoch训练动画帧（决策边界演化 + 损失曲线）
+    if algorithm == 'mlp':
+        frames = _mlp_frames(model, mesh, X_tr, y_tr, GRID_SIZE)
+        result['frames'] = frames
+        result['history'] = model.history
 
     # 树模型附带树结构（随机森林展示第一棵树）
     if spec.get('tree') == 'forest':
@@ -155,6 +193,48 @@ def run_classification(algorithm, params, X, y):
         result['tree'] = serialize_tree(model.tree, feature_names=['x₁', 'x₂'])
 
     return result
+
+
+def _mlp_frames(model, mesh, X_tr, y_tr, grid_size, max_frames=40):
+    """重放MLP训练过程，采样决策边界帧用于动画"""
+    # 重新训练并记录中间状态（用相同随机种子保证可复现）
+    n_epochs = model.n_epochs
+    step = max(1, n_epochs // max_frames)
+    frames = []
+
+    # 保存当前权重，从头重放
+    np.random.seed(model.random_state)
+    n_features = X_tr.shape[1]
+    n_classes = len(np.unique(y_tr))
+    y_onehot = np.eye(n_classes)[y_tr.astype(int)]
+    model._init_params(n_features, n_classes)
+
+    for epoch in range(n_epochs):
+        activations, zs = model._forward(X_tr)
+        probs = activations[-1]
+        loss = model._cross_entropy(probs, y_onehot)
+        acc = float(np.mean(np.argmax(probs, axis=1) == y_tr))
+
+        if epoch % step == 0 or epoch == n_epochs - 1:
+            grid_pred = np.argmax(model.predict_proba(mesh), axis=1)
+            frames.append({
+                'epoch': epoch,
+                'grid': grid_pred.tolist(),
+                'loss': float(loss),
+                'accuracy': acc,
+            })
+
+        # 一步梯度更新
+        delta = (probs - y_onehot) / len(y_tr)
+        for i in range(len(model.weights) - 1, -1, -1):
+            dW = activations[i].T @ delta
+            db = delta.sum(axis=0)
+            if i > 0:
+                delta = (delta @ model.weights[i].T) * model._activate_grad(zs[i - 1])
+            model.weights[i] -= model.learning_rate * dW
+            model.biases[i] -= model.learning_rate * db
+
+    return frames
 
 
 def serialize_tree(node, feature_names):
@@ -410,12 +490,15 @@ def get_catalog():
     return catalog
 
 
-def run(task, algorithm, params, X, y):
+def run(task, algorithm, params, X, y, test_ratio=0.2):
     """统一执行入口"""
     if task not in RUNNERS:
         raise ValueError(f"未知任务: {task}")
     registry, runner = RUNNERS[task]
     if algorithm not in registry:
         raise ValueError(f"未知算法: {algorithm}")
+    if task == 'classification':
+        return runner(algorithm, params, np.asarray(X, dtype=float),
+                      np.asarray(y, dtype=float), test_ratio=test_ratio)
     return runner(algorithm, params, np.asarray(X, dtype=float),
                   np.asarray(y, dtype=float))

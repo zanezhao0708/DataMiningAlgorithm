@@ -59,7 +59,7 @@ class KNN:
 
     def predict(self, X):
         """
-        对多个样本进行预测
+        对多个样本进行预测（向量化实现，批量计算距离矩阵）
 
         参数:
             X: 测试特征，形状为(n_samples, n_features)
@@ -68,8 +68,22 @@ class KNN:
             预测结果，形状为(n_samples,)
         """
         X = np.array(X)
-        predictions = [self._predict_single(x) for x in X]
-        return np.array(predictions)
+        if self.task_type == 'regression':
+            # 回归仍逐样本取均值（简单场景）
+            return np.array([self._predict_single(x) for x in X])
+
+        # 分类：向量化距离矩阵 (n_test, n_train)
+        diff = X[:, None, :] - self.X_train[None, :, :]
+        dist_sq = np.sum(diff * diff, axis=2)
+        k_indices = np.argpartition(dist_sq, self.k, axis=1)[:, :self.k]
+        k_labels = self.y_train[k_indices]
+
+        # 多数投票：对每个测试样本统计邻居标签
+        predictions = np.empty(X.shape[0], dtype=self.y_train.dtype)
+        for i in range(X.shape[0]):
+            labels, counts = np.unique(k_labels[i], return_counts=True)
+            predictions[i] = labels[np.argmax(counts)]
+        return predictions
 
     def score(self, X, y):
         """
