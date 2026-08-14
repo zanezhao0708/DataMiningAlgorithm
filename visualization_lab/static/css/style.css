@@ -280,7 +280,8 @@ input[type="range"]::-webkit-slider-thumb {
 }
 #main-canvas { width: 100%; height: 100%; display: block; }
 
-.loading[hidden] { display: none; }
+/* hidden 属性可能被 display 类规则覆盖，全局兜底 */
+[hidden] { display: none !important; }
 .loading {
     position: absolute;
     inset: 0;
@@ -355,6 +356,57 @@ input[type="range"]::-webkit-slider-thumb {
 .tnode text { fill: var(--text); font-size: 11px; font-family: ui-monospace, monospace; }
 .tedge { stroke: #ccc; fill: none; stroke-width: 1.5; }
 .tedge-label { fill: var(--text-dim); font-size: 10px; }
+
+/* 标题行与源码按钮 */
+.stage-title-row { display: flex; align-items: center; gap: 10px; }
+.source-toggle {
+    padding: 4px 10px;
+    font-size: 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #fafafa;
+    color: var(--text-dim);
+    cursor: pointer;
+}
+.source-toggle:hover { border-color: var(--accent-2); color: var(--accent-2); }
+.source-toggle.active { border-color: var(--accent-2); color: var(--accent-2); background: #fff3e0; }
+
+/* 源码面板 */
+.source-panel {
+    background: #1e1e2e;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+}
+.source-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: #181825;
+}
+.source-path {
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+    color: #a6adc8;
+}
+.source-head .btn.icon {
+    background: transparent;
+    border-color: #45475a;
+    color: #cdd6f4;
+    width: 26px;
+}
+#source-code {
+    margin: 0;
+    padding: 12px 14px;
+    max-height: 380px;
+    overflow: auto;
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+    line-height: 1.55;
+    color: #cdd6f4;
+    white-space: pre;
+}
 
 /* 滚动条 */
 ::-webkit-scrollbar { width: 8px; height: 8px; }

@@ -4,6 +4,7 @@ ML算法可视化实验室 - FastAPI后端
 """
 
 import io
+import os
 import sys
 import contextlib
 
@@ -16,6 +17,14 @@ from services.datasets import generate, previews
 from services.algorithms import get_catalog, run
 
 app = FastAPI(title="ML算法可视化实验室")
+
+
+@app.middleware("http")
+async def no_cache(request, call_next):
+    """静态资源与API禁用缓存，保证部署更新后用户立即拿到新版本"""
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 class DatasetRequest(BaseModel):
@@ -60,6 +69,22 @@ def api_dataset(req: DatasetRequest):
         return {'X': X_json, 'y': y_json}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/source/{algorithm}")
+def api_source(algorithm: str):
+    """返回算法实现的Python源码（供前端源码面板展示）"""
+    import inspect
+    from services.algorithms import RUNNERS
+    for registry, _ in RUNNERS.values():
+        if algorithm in registry:
+            spec = registry[algorithm]
+            defaults = {p['key']: p['default'] for p in spec['params']}
+            cls = type(spec['build'](defaults))
+            path = inspect.getfile(cls)
+            rel = os.path.relpath(path, os.path.join(os.path.dirname(__file__), '..', '..'))
+            return {'path': rel.replace(os.sep, '/'), 'source': inspect.getsource(cls)}
+    raise HTTPException(status_code=404, detail=f"未知算法: {algorithm}")
 
 
 @app.post("/api/run")

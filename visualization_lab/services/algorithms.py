@@ -59,6 +59,7 @@ CLASSIFIERS = {
     },
     'logistic_regression': {
         'name': '逻辑回归',
+        'animated': True,
         'params': [_slider('learning_rate', '学习率', 0.01, 2.0, 0.5, 0.01),
                    _slider('n_iterations', '迭代次数', 50, 3000, 800, 50)],
         'build': lambda p: LogisticRegression(learning_rate=p['learning_rate'],
@@ -66,6 +67,7 @@ CLASSIFIERS = {
     },
     'svm': {
         'name': '支持向量机 SVM',
+        'animated': True,
         'params': [_slider('lambda_param', '正则强度 λ', 0.001, 0.5, 0.01, 0.001),
                    _slider('n_iterations', '迭代次数', 50, 3000, 1000, 50)],
         'build': lambda p: SVM(lambda_param=p['lambda_param'],
@@ -78,6 +80,7 @@ CLASSIFIERS = {
     },
     'perceptron': {
         'name': '感知机',
+        'animated': True,
         'params': [_slider('learning_rate', '学习率', 0.01, 1.0, 0.1, 0.01),
                    _slider('n_iterations', '迭代次数', 10, 1000, 100, 10)],
         'build': lambda p: Perceptron(learning_rate=p['learning_rate'],
@@ -97,6 +100,7 @@ CLASSIFIERS = {
     },
     'softmax_regression': {
         'name': 'Softmax回归',
+        'animated': True,
         'params': [_slider('learning_rate', '学习率', 0.01, 1.0, 0.1, 0.01),
                    _slider('n_iterations', '迭代次数', 50, 3000, 1000, 50)],
         'build': lambda p: SoftmaxRegression(learning_rate=p['learning_rate'],
@@ -184,6 +188,13 @@ def run_classification(algorithm, params, X, y, test_ratio=0.2):
         frames = _mlp_frames(model, mesh, X_tr, y_tr, GRID_SIZE)
         result['frames'] = frames
         result['history'] = model.history
+    elif spec.get('animated') and getattr(model, 'history', None):
+        # 梯度下降类算法：用训练过程的权重快照生成决策边界动画帧
+        frames = _gd_classification_frames(algorithm, model, mesh, X_tr, y_tr)
+        if frames:
+            result['frames'] = frames
+            result['history'] = [{'loss': f['loss'], 'accuracy': f['accuracy']}
+                                 for f in frames]
 
     # 树模型附带树结构（随机森林展示第一棵树）
     if spec.get('tree') == 'forest':
@@ -234,6 +245,56 @@ def _mlp_frames(model, mesh, X_tr, y_tr, grid_size, max_frames=40):
             model.weights[i] -= model.learning_rate * dW
             model.biases[i] -= model.learning_rate * db
 
+    return frames
+
+
+def _gd_classification_frames(algorithm, model, mesh, X_tr, y_tr):
+    """用梯度下降训练过程的权重快照，生成决策边界动画帧"""
+    history = getattr(model, 'history', None)
+    if not history:
+        return None
+    X_tr = np.asarray(X_tr, dtype=float)
+    y_tr = np.asarray(y_tr)
+    if algorithm != 'softmax_regression':
+        # 二分类：原始标签统一映射为 0/1 以便与预测比较
+        classes = np.unique(y_tr)
+        y_tr = np.where(y_tr == classes[0], 0, 1)
+
+    frames = []
+    for snap in history:
+        w = np.asarray(snap['weights'], dtype=float)
+        b = np.asarray(snap['bias'], dtype=float)
+
+        if algorithm == 'logistic_regression':
+            grid = (1 / (1 + np.exp(-np.clip(mesh @ w + b, -250, 250)))) >= 0.5
+            train_pred = (1 / (1 + np.exp(-np.clip(X_tr @ w + b, -250, 250)))) >= 0.5
+        elif algorithm == 'perceptron':
+            grid = (mesh @ w + b) >= 0
+            train_pred = (X_tr @ w + b) >= 0
+        elif algorithm == 'svm':
+            # SVM 内部用 sign(x·w - b)，标签为 ±1
+            grid = np.sign(mesh @ w - b)
+            grid = np.where(grid == -1, 0, 1)
+            train_pred = np.sign(X_tr @ w - b)
+            train_pred = np.where(train_pred == -1, 0, 1)
+        elif algorithm == 'softmax_regression':
+            scores = mesh @ w + b
+            scores -= scores.max(axis=1, keepdims=True)
+            exp = np.exp(scores)
+            grid = np.argmax(exp / exp.sum(axis=1, keepdims=True), axis=1)
+            ts = X_tr @ w + b
+            ts -= ts.max(axis=1, keepdims=True)
+            te = np.exp(ts)
+            train_pred = np.argmax(te / te.sum(axis=1, keepdims=True), axis=1)
+        else:
+            continue
+
+        frames.append({
+            'epoch': snap['iter'],
+            'grid': grid.astype(int).tolist(),
+            'loss': float(snap.get('loss', 0.0)),
+            'accuracy': float(np.mean(train_pred.astype(int) == y_tr)),
+        })
     return frames
 
 
@@ -362,14 +423,22 @@ def silhouette(X, labels):
 REGRESSORS = {
     'linear_regression': {
         'name': '线性回归',
-        'params': [_slider('n_iterations', '迭代次数', 100, 5000, 2000, 100)],
-        'build': lambda p: LinearRegression(n_iterations=p['n_iterations'],
-                                            method='normal_equation'),
+        'animated': True,
+        'params': [_slider('learning_rate', '学习率', 0.01, 1.0, 0.1, 0.01),
+                   _slider('n_iterations', '迭代次数', 100, 5000, 2000, 100)],
+        'build': lambda p: LinearRegression(learning_rate=p['learning_rate'],
+                                            n_iterations=p['n_iterations'],
+                                            method='gradient_descent'),
     },
     'polynomial_regression': {
         'name': '多项式回归',
-        'params': [_slider('degree', '多项式阶数', 1, 9, 3)],
-        'build': lambda p: PolynomialRegression(degree=p['degree']),
+        'animated': True,
+        'params': [_slider('degree', '多项式阶数', 1, 9, 3),
+                   _slider('learning_rate', '学习率', 0.01, 1.0, 0.1, 0.01),
+                   _slider('n_iterations', '迭代次数', 100, 3000, 1000, 100)],
+        'build': lambda p: PolynomialRegression(degree=p['degree'],
+                                                learning_rate=p['learning_rate'],
+                                                n_iterations=p['n_iterations']),
     },
     'ridge_regression': {
         'name': '岭回归 (L2)',
@@ -378,6 +447,7 @@ REGRESSORS = {
     },
     'lasso_regression': {
         'name': 'Lasso回归 (L1)',
+        'animated': True,
         'params': [_slider('alpha', '正则强度 α', 0.01, 5.0, 0.5, 0.01),
                    _slider('n_iterations', '迭代次数', 100, 3000, 1000, 100)],
         'build': lambda p: LassoRegression(alpha=p['alpha'],
@@ -400,10 +470,43 @@ def run_regression(algorithm, params, X, y):
     ss_res = float(np.sum((y - pred) ** 2))
     ss_tot = float(np.sum((y - y.mean()) ** 2))
 
-    return {
+    result = {
         'curve': [[float(a), float(b)] for a, b in zip(curve_x.ravel(), curve_y)],
         'r2': 1 - ss_res / (ss_tot + 1e-12),
     }
+
+    # 梯度下降类回归：用权重快照生成拟合曲线演化动画帧
+    if spec.get('animated') and getattr(model, 'history', None):
+        result['frames'] = _gd_regression_frames(model, curve_x)
+        result['history'] = [{'loss': f['loss'], 'accuracy': 0.0}
+                             for f in result['frames']]
+    return result
+
+
+def _gd_regression_frames(model, curve_x, max_frames=40):
+    """用训练过程的权重快照生成拟合曲线动画帧"""
+    history = model.history
+    if len(history) > max_frames:
+        idx = np.linspace(0, len(history) - 1, max_frames).astype(int)
+        history = [history[i] for i in idx]
+
+    frames = []
+    for snap in history:
+        w = np.asarray(snap['weights'], dtype=float)
+        b = float(snap['bias'])
+        if hasattr(model, 'X_poly'):
+            # 多项式回归：曲线点需经过同样的特征变换与标准化
+            phi = model._polynomial_features(curve_x)
+            phi = (phi - model.poly_mean) / model.poly_std
+            curve_y = phi @ w + b
+        else:
+            curve_y = (curve_x @ w) + b
+        frames.append({
+            'epoch': snap['iter'],
+            'curve': [[float(a), float(c)] for a, c in zip(curve_x.ravel(), curve_y)],
+            'loss': float(snap['loss']),
+        })
+    return frames
 
 
 # ============ 降维算法 ============

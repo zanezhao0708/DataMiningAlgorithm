@@ -37,6 +37,10 @@ class Perceptron:
         self.weights = np.zeros(n_features)
         self.bias = 0
 
+        # 记录训练过程（权重快照，供可视化动画回放）
+        self.history = []
+        step = max(1, self.n_iterations // 40)
+
         # 训练
         for i in range(self.n_iterations):
             n_errors = 0
@@ -50,6 +54,12 @@ class Perceptron:
                     self.weights += self.learning_rate * y_i * x_i
                     self.bias += self.learning_rate * y_i
                     n_errors += 1
+
+            if i % step == 0 or i == self.n_iterations - 1 or n_errors == 0:
+                self.history.append({'iter': i,
+                                     'weights': self.weights.copy(),
+                                     'bias': float(self.bias),
+                                     'errors': int(n_errors)})
 
             if i % 100 == 0:
                 accuracy = self.score(X, y)

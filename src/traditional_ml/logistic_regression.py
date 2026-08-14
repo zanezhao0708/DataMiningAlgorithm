@@ -37,6 +37,10 @@ class LogisticRegression:
         self.weights = np.zeros(n_features)
         self.bias = 0
 
+        # 记录训练过程（权重快照，供可视化动画回放）
+        self.history = []
+        step = max(1, self.n_iterations // 40)
+
         # 梯度下降
         for i in range(self.n_iterations):
             # 前向传播
@@ -50,6 +54,12 @@ class LogisticRegression:
             # 更新参数
             self.weights -= self.learning_rate * dw
             self.bias -= self.learning_rate * db
+
+            if i % step == 0 or i == self.n_iterations - 1:
+                self.history.append({'iter': i,
+                                     'weights': self.weights.copy(),
+                                     'bias': float(self.bias),
+                                     'loss': float(self._compute_loss(y, y_pred))})
 
             # 打印损失
             if i % 100 == 0:

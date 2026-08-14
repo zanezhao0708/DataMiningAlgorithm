@@ -83,7 +83,10 @@
         <!-- 右侧可视化区 -->
         <section class="stage">
             <div class="stage-head">
-                <h2 id="stage-title">选择算法</h2>
+                <div class="stage-title-row">
+                    <h2 id="stage-title">选择算法</h2>
+                    <button class="btn source-toggle" id="btn-source" title="展开/收起当前算法的Python源码">查看源码</button>
+                </div>
                 <div class="metrics" id="metrics"></div>
             </div>
 
@@ -114,6 +117,15 @@
             <div class="tree-panel" id="tree-panel" hidden>
                 <h3>决策树结构 <span class="tree-hint">（随机森林展示第一棵树）</span></h3>
                 <div class="tree-scroll" id="tree-container"></div>
+            </div>
+
+            <!-- 源码面板 -->
+            <div class="source-panel" id="source-panel" hidden>
+                <div class="source-head">
+                    <span class="source-path" id="source-path"></span>
+                    <button class="btn icon" id="source-close" title="收起源码">×</button>
+                </div>
+                <pre id="source-code"></pre>
             </div>
         </section>
     </main>

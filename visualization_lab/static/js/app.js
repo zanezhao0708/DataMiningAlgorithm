@@ -91,6 +91,31 @@ function bindUI() {
         state.anim.frame = +e.target.value;
         draw();
     });
+
+    $('btn-source').addEventListener('click', toggleSource);
+    $('source-close').addEventListener('click', () => setSourceOpen(false));
+}
+
+// ===================== 源码面板 =====================
+function setSourceOpen(open) {
+    $('source-panel').hidden = !open;
+    $('btn-source').classList.toggle('active', open);
+    if (open) loadSource();
+}
+
+function toggleSource() {
+    setSourceOpen($('source-panel').hidden);
+}
+
+async function loadSource() {
+    if (!state.algorithm) return;
+    try {
+        const res = await fetch(`/api/source/${state.algorithm}`);
+        if (!res.ok) return;
+        const d = await res.json();
+        $('source-path').textContent = d.path;
+        $('source-code').textContent = d.source;
+    } catch (e) { /* 源码加载失败时静默 */ }
 }
 
 // 请求合并：滑块连续拖动时只执行最后一次
@@ -195,6 +220,7 @@ function selectAlgorithm(id) {
     document.querySelectorAll('.algo-item').forEach(el =>
         el.classList.toggle('active', el.dataset.id === id));
     renderParams();
+    if (!$('source-panel').hidden) loadSource();
     runAlgorithm();
 }
 
@@ -292,11 +318,12 @@ async function runAlgorithm() {
         state.elapsed = performance.now() - t0;
 
         stopAnim();
-        // 动画帧（K-Means 聚类 或 MLP 分类）
+        // 动画帧（K-Means聚类 / MLP / 梯度下降分类 / 梯度下降回归）
         if (state.result.frames && state.result.frames.length) {
             state.anim.frames = state.result.frames;
             state.anim.frame = state.result.frames.length - 1;  // 默认显示最终状态
-            state.anim.type = state.task === 'clustering' ? 'kmeans' : 'mlp';
+            state.anim.type = state.task === 'clustering' ? 'kmeans'
+                : state.task === 'regression' ? 'reg' : 'grid';
             $('anim-bar').hidden = false;
             $('anim-slider').max = state.result.frames.length - 1;
             $('anim-slider').value = state.anim.frame;
@@ -426,13 +453,14 @@ function drawClassification(X, w, h) {
     const r = state.result;
     const testSet = r && r.test_indices ? new Set(r.test_indices) : null;
 
-    // MLP动画：使用当前帧的网格
+    // 训练动画（MLP / 梯度下降）：使用当前帧的网格
     let grid = r ? r.grid : null;
     let ranges = r ? [r.x_range, r.y_range] : null;
-    if (r && r.frames && state.anim.type === 'mlp') {
+    if (r && r.frames && state.anim.type === 'grid') {
         const frame = r.frames[state.anim.frame];
         grid = frame.grid;
-        $('anim-label').textContent = `epoch ${frame.epoch}`;
+        const prefix = state.algorithm === 'mlp' ? 'epoch' : '迭代';
+        $('anim-label').textContent = `${prefix} ${frame.epoch}`;
         $('anim-slider').value = state.anim.frame;
     }
 
@@ -548,6 +576,15 @@ function drawRegression(X, w, h) {
     const t = makeTransform(pts, w, h);
     const r = state.result;
 
+    // 训练动画：使用当前帧的拟合曲线
+    let curve = r ? r.curve : null;
+    if (r && r.frames && state.anim.type === 'reg') {
+        const frame = r.frames[state.anim.frame];
+        curve = frame.curve;
+        $('anim-label').textContent = `迭代 ${frame.epoch}`;
+        $('anim-slider').value = state.anim.frame;
+    }
+
     for (let i = 0; i < pts.length; i++) {
         const px = t.sx(pts[i][0]), py = t.sy(pts[i][1]);
         ctx.beginPath();
@@ -558,9 +595,9 @@ function drawRegression(X, w, h) {
         ctx.globalAlpha = 1;
     }
 
-    if (r && r.curve) {
+    if (curve) {
         ctx.beginPath();
-        r.curve.forEach(([x, y], i) => {
+        curve.forEach(([x, y], i) => {
             const px = t.sx(x), py = t.sy(y);
             i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
         });
@@ -595,6 +632,7 @@ function drawLossChart(history) {
 
     const losses = history.map(h => h.loss);
     const accs = history.map(h => h.accuracy);
+    const hasAcc = accs.some(a => a > 0);  // 回归任务无准确率曲线
     const maxL = Math.max(...losses), minL = Math.min(...losses);
     const pad = 6;
 
@@ -609,23 +647,27 @@ function drawLossChart(history) {
     c.lineWidth = 2;
     c.stroke();
 
-    // 准确率曲线（蓝）
-    c.beginPath();
-    accs.forEach((a, i) => {
-        const x = pad + (w - pad * 2) * i / (accs.length - 1);
-        const y = pad + (108 - pad) * (1 - a);
-        i === 0 ? c.moveTo(x, y) : c.lineTo(x, y);
-    });
-    c.strokeStyle = '#1a73e8';
-    c.lineWidth = 2;
-    c.stroke();
+    // 准确率曲线（蓝，仅分类任务）
+    if (hasAcc) {
+        c.beginPath();
+        accs.forEach((a, i) => {
+            const x = pad + (w - pad * 2) * i / (accs.length - 1);
+            const y = pad + (108 - pad) * (1 - a);
+            i === 0 ? c.moveTo(x, y) : c.lineTo(x, y);
+        });
+        c.strokeStyle = '#1a73e8';
+        c.lineWidth = 2;
+        c.stroke();
+    }
 
     // 图例
     c.font = '10px sans-serif';
     c.fillStyle = '#e6850f';
     c.fillText(`损失 ${losses[losses.length - 1].toFixed(3)}`, 8, 12);
-    c.fillStyle = '#1a73e8';
-    c.fillText(`准确率 ${(accs[accs.length - 1] * 100).toFixed(1)}%`, 90, 12);
+    if (hasAcc) {
+        c.fillStyle = '#1a73e8';
+        c.fillText(`准确率 ${(accs[accs.length - 1] * 100).toFixed(1)}%`, 90, 12);
+    }
 }
 
 // ===================== 动画控制 =====================
@@ -641,11 +683,11 @@ function playAnim() {
             stopAnim();
         }
         draw();
-        // MLP动画同步损失曲线进度
-        if (state.anim.type === 'mlp' && state.result.history) {
+        // 训练动画同步损失曲线进度
+        if (state.anim.type !== 'kmeans' && state.result.history) {
             drawLossChart(state.result.history.slice(0, state.anim.frame + 2));
         }
-    }, state.anim.type === 'mlp' ? 150 : 400);
+    }, state.anim.type === 'kmeans' ? 400 : 150);
 }
 
 function stopAnim() {

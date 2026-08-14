@@ -43,6 +43,10 @@ class SoftmaxRegression:
         # 将标签转换为one-hot编码
         y_one_hot = np.eye(self.n_classes)[y]
 
+        # 记录训练过程（权重快照，供可视化动画回放）
+        self.history = []
+        step = max(1, self.n_iterations // 40)
+
         # 梯度下降
         for i in range(self.n_iterations):
             # 计算得分
@@ -59,6 +63,12 @@ class SoftmaxRegression:
             # 更新参数
             self.weights -= self.learning_rate * dw
             self.bias -= self.learning_rate * db
+
+            if i % step == 0 or i == self.n_iterations - 1:
+                self.history.append({'iter': i,
+                                     'weights': self.weights.copy(),
+                                     'bias': self.bias.copy(),
+                                     'loss': float(self._compute_loss(y_one_hot, probabilities))})
 
             if i % 100 == 0:
                 loss = self._compute_loss(y_one_hot, probabilities)
