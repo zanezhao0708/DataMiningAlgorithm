@@ -19,7 +19,19 @@
 │   │   ├── naive_bayes.py          # 朴素贝叶斯
 │   │   ├── kmeans.py               # K-Means聚类
 │   │   ├── linear_regression.py    # 线性回归
-│   │   └── logistic_regression.py  # 逻辑回归
+│   │   ├── logistic_regression.py  # 逻辑回归
+│   │   ├── svm.py                  # 支持向量机
+│   │   ├── random_forest.py        # 随机森林
+│   │   ├── pca.py                  # 主成分分析
+│   │   ├── dbscan.py               # DBSCAN聚类
+│   │   ├── adaboost.py             # AdaBoost集成学习
+│   │   ├── perceptron.py           # 感知机
+│   │   ├── ridge_regression.py     # 岭回归
+│   │   ├── lasso_regression.py     # Lasso回归
+│   │   ├── hierarchical_clustering.py  # 层次聚类
+│   │   ├── gmm.py                  # 高斯混合模型
+│   │   ├── apriori.py              # Apriori关联规则
+│   │   └── polynomial_regression.py    # 多项式回归
 │   └── utils/                      # 工具函数
 │       └── data_loader.py          # 数据加载与处理工具
 ├── requirements.txt                # Python依赖列表
@@ -174,6 +186,208 @@ model.fit(X_train, y_train)
 predictions = model.predict(X_test)
 ```
 
+#### 7. 支持向量机 (svm.py)
+寻找最优超平面进行分类，适用于高维数据。
+
+**算法特点：**
+- 支持线性核函数
+- 通过正则化参数控制模型复杂度
+- 提供决策函数值
+
+**使用示例：**
+```python
+from src.traditional_ml import SVM
+
+model = SVM(learning_rate=0.001, lambda_param=0.01)
+model.fit(X_train, y_train)
+predictions = model.predict(X_test)
+```
+
+#### 8. 随机森林 (random_forest.py)
+集成多个决策树，通过投票机制进行分类。
+
+**算法特点：**
+- 使用Bootstrap采样和特征随机选择
+- 支持多棵树集成
+- 提供准确率评估
+
+**使用示例：**
+```python
+from src.traditional_ml import RandomForest
+
+model = RandomForest(n_trees=10, max_depth=8)
+model.fit(X_train, y_train)
+predictions = model.predict(X_test)
+```
+
+#### 9. 主成分分析 (pca.py)
+降维算法，通过线性变换保留主要信息。
+
+**算法特点：**
+- 支持自定义主成分数量
+- 输出方差贡献率
+- 支持数据还原
+
+**使用示例：**
+```python
+from src.traditional_ml import PCA
+
+model = PCA(n_components=3)
+X_transformed = model.fit_transform(X_train)
+print(f"累计方差贡献率: {np.sum(model.explained_variance_ratio):.4f}")
+```
+
+#### 10. DBSCAN聚类 (dbscan.py)
+基于密度的聚类算法，能够发现任意形状的簇。
+
+**算法特点：**
+- 不需要指定簇数量
+- 自动识别噪声点
+- 支持任意形状的簇
+
+**使用示例：**
+```python
+from src.traditional_ml import DBSCAN
+
+model = DBSCAN(eps=0.5, min_samples=5)
+labels = model.fit_predict(X_train)
+```
+
+#### 11. AdaBoost集成学习 (adaboost.py)
+通过迭代训练弱分类器并组合成强分类器。
+
+**算法特点：**
+- 使用决策树桩作为弱分类器
+- 自动调整样本权重
+- 提供分类器权重
+
+**使用示例：**
+```python
+from src.traditional_ml import AdaBoost
+
+model = AdaBoost(n_estimators=50)
+model.fit(X_train, y_train)
+predictions = model.predict(X_test)
+```
+
+#### 12. 感知机 (perceptron.py)
+最简单的神经网络模型，用于二分类问题。
+
+**算法特点：**
+- 在线学习算法
+- 收敛性保证（线性可分数据）
+- 计算简单快速
+
+**使用示例：**
+```python
+from src.traditional_ml import Perceptron
+
+model = Perceptron(learning_rate=0.01)
+model.fit(X_train, y_train)
+predictions = model.predict(X_test)
+```
+
+#### 13. 岭回归 (ridge_regression.py)
+带L2正则化的线性回归，防止过拟合。
+
+**算法特点：**
+- 支持梯度下降和闭式解两种方法
+- L2正则化防止过拟合
+- 输出权重系数和截距
+
+**使用示例：**
+```python
+from src.traditional_ml import RidgeRegression
+
+model = RidgeRegression(alpha=1.0, method='closed_form')
+model.fit(X_train, y_train)
+predictions = model.predict(X_test)
+```
+
+#### 14. Lasso回归 (lasso_regression.py)
+带L1正则化的线性回归，可以实现特征选择。
+
+**算法特点：**
+- L1正则化实现特征选择
+- 输出特征重要性
+- 稀疏解
+
+**使用示例：**
+```python
+from src.traditional_ml import LassoRegression
+
+model = LassoRegression(alpha=0.1)
+model.fit(X_train, y_train)
+importance = model.get_feature_importance(feature_names)
+```
+
+#### 15. 层次聚类 (hierarchical_clustering.py)
+通过构建层次树结构进行聚类。
+
+**算法特点：**
+- 支持单链接、全链接和平均链接
+- 不需要预设簇数量（可使用树状图）
+- 提供合并历史
+
+**使用示例：**
+```python
+from src.traditional_ml import HierarchicalClustering
+
+model = HierarchicalClustering(n_clusters=3, linkage='average')
+labels = model.fit_predict(X_train)
+```
+
+#### 16. 高斯混合模型 (gmm.py)
+概率聚类模型，假设数据由多个高斯分布混合生成。
+
+**算法特点：**
+- 使用EM算法训练
+- 输出概率估计
+- 软聚类（样本可以属于多个簇）
+
+**使用示例：**
+```python
+from src.traditional_ml import GaussianMixtureModel
+
+model = GaussianMixtureModel(n_components=3)
+labels = model.fit_predict(X_train)
+probabilities = model.predict_proba(X_test)
+```
+
+#### 17. Apriori关联规则 (apriori.py)
+通过频繁项集挖掘发现数据项之间的关联关系。
+
+**算法特点：**
+- 挖掘频繁项集
+- 生成关联规则
+- 输出支持度和置信度
+
+**使用示例：**
+```python
+from src.traditional_ml import Apriori
+
+model = Apriori(min_support=0.3, min_confidence=0.6)
+model.fit(transactions)
+top_rules = model.get_top_rules(n=10)
+```
+
+#### 18. 多项式回归 (polynomial_regression.py)
+通过添加多项式特征拟合非线性关系。
+
+**算法特点：**
+- 支持自定义多项式阶数
+- 自动生成多项式特征
+- 适合非线性数据
+
+**使用示例：**
+```python
+from src.traditional_ml import PolynomialRegression
+
+model = PolynomialRegression(degree=2)
+model.fit(X_train, y_train)
+predictions = model.predict(X_test)
+```
+
 ### 三、数据加载工具 (utils/)
 
 #### 数据加载工具 (data_loader.py)
@@ -236,6 +450,54 @@ python linear_regression.py
 # 逻辑回归
 cd src/traditional_ml
 python logistic_regression.py
+
+# 支持向量机
+cd src/traditional_ml
+python svm.py
+
+# 随机森林
+cd src/traditional_ml
+python random_forest.py
+
+# 主成分分析
+cd src/traditional_ml
+python pca.py
+
+# DBSCAN聚类
+cd src/traditional_ml
+python dbscan.py
+
+# AdaBoost集成学习
+cd src/traditional_ml
+python adaboost.py
+
+# 感知机
+cd src/traditional_ml
+python perceptron.py
+
+# 岭回归
+cd src/traditional_ml
+python ridge_regression.py
+
+# Lasso回归
+cd src/traditional_ml
+python lasso_regression.py
+
+# 层次聚类
+cd src/traditional_ml
+python hierarchical_clustering.py
+
+# 高斯混合模型
+cd src/traditional_ml
+python gmm.py
+
+# Apriori关联规则
+cd src/traditional_ml
+python apriori.py
+
+# 多项式回归
+cd src/traditional_ml
+python polynomial_regression.py
 ```
 
 运行数据加载工具：
@@ -246,10 +508,11 @@ python data_loader.py
 
 ## 技术特点
 
-1. **纯 NumPy 实现**：所有神经网络模型均使用 NumPy 手动实现，便于理解底层原理
+1. **纯 NumPy 实现**：所有算法均使用 NumPy 手动实现，便于理解底层原理
 2. **模块化设计**：清晰的代码结构，便于扩展和维护
 3. **详细注释**：代码包含详细的中文注释，易于学习理解
-4. **完整训练流程**：包含前向传播、反向传播、梯度更新等完整训练过程
+4. **完整训练流程**：包含模型训练、预测、评估等完整流程
+5. **算法多样性**：涵盖监督学习、无监督学习、降维、关联规则等多种类型
 
 ## 数据格式
 
