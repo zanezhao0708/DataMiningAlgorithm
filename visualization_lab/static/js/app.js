@@ -753,6 +753,24 @@ function maxDepth(node) {
 
 function hideTree() { $('tree-panel').hidden = true; }
 
+// ===================== GitHub Star 数 =====================
+async function loadStarCount() {
+    try {
+        const res = await fetch('https://api.github.com/repos/zanezhao0708/DataMiningAlgorithm');
+        if (!res.ok) return;
+        const data = await res.json();
+        const el = $('star-count');
+        if (el && typeof data.stargazers_count === 'number') {
+            el.textContent = data.stargazers_count >= 1000
+                ? (data.stargazers_count / 1000).toFixed(1) + 'k'
+                : data.stargazers_count;
+        }
+    } catch (e) {
+        // 网络受限（如离线环境）时静默忽略，按钮仍可点击跳转
+    }
+}
+
 // ===================== 启动 =====================
 window.addEventListener('resize', draw);
 init();
+loadStarCount();
