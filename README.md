@@ -1,6 +1,6 @@
-# 神经网络算法实现集合
+# 数据挖掘算法实现集合
 
-本项目包含多种神经网络算法的 Python 实现，从基础的前馈神经网络到多层感知机应用。
+本项目包含多种数据挖掘和机器学习算法的 Python 实现，涵盖神经网络、传统机器学习算法等。
 
 ## 项目结构
 
@@ -13,6 +13,13 @@
 │   ├── neural_networks/            # 神经网络实现
 │   │   ├── basic_nn.py             # 基础三层神经网络
 │   │   └── mnist_classifier.py     # MNIST手写数字识别
+│   ├── traditional_ml/             # 传统机器学习算法
+│   │   ├── knn.py                  # K近邻算法
+│   │   ├── decision_tree.py        # 决策树
+│   │   ├── naive_bayes.py          # 朴素贝叶斯
+│   │   ├── kmeans.py               # K-Means聚类
+│   │   ├── linear_regression.py    # 线性回归
+│   │   └── logistic_regression.py  # 逻辑回归
 │   └── utils/                      # 工具函数
 │       └── data_loader.py          # 数据加载与处理工具
 ├── requirements.txt                # Python依赖列表
@@ -21,7 +28,9 @@
 
 ## 功能模块
 
-### 1. 基础神经网络 (basic_nn.py)
+### 一、神经网络模块 (neural_networks/)
+
+#### 1. 基础神经网络 (basic_nn.py)
 
 实现一个三层前馈神经网络，完成3分类任务。
 
@@ -38,7 +47,7 @@
 - 训练轮数：1000
 - 损失函数：交叉熵损失
 
-### 2. MNIST手写数字识别 (mnist_classifier.py)
+#### 2. MNIST手写数字识别 (mnist_classifier.py)
 
 实现一个四层神经网络用于手写数字识别。
 
@@ -61,7 +70,113 @@
 - 训练过程可视化
 - 准确率评估功能
 
-### 3. 数据加载工具 (data_loader.py)
+### 二、传统机器学习模块 (traditional_ml/)
+
+#### 1. K近邻算法 (knn.py)
+基于实例的学习算法，通过计算距离找到最近的K个邻居进行分类或回归。
+
+**算法特点：**
+- 距离度量：欧氏距离
+- 支持分类和回归任务
+- 参数：邻居数量k
+
+**使用示例：**
+```python
+from src.traditional_ml import KNN
+
+model = KNN(k=5, task_type='classification')
+model.fit(X_train, y_train)
+predictions = model.predict(X_test)
+```
+
+#### 2. 决策树 (decision_tree.py)
+基于树结构的分类算法，通过递归地选择最优特征进行分裂。
+
+**算法特点：**
+- 分裂准则：基尼系数
+- 支持最大深度、最小样本数等参数
+- 易于理解和可视化
+
+**使用示例：**
+```python
+from src.traditional_ml import DecisionTree
+
+model = DecisionTree(max_depth=5)
+model.fit(X_train, y_train)
+predictions = model.predict(X_test)
+```
+
+#### 3. 朴素贝叶斯 (naive_bayes.py)
+基于贝叶斯定理的概率分类器，假设特征条件独立。
+
+**算法特点：**
+- 使用高斯分布建模
+- 计算速度快，适合小数据集
+- 输出概率估计
+
+**使用示例：**
+```python
+from src.traditional_ml import NaiveBayes
+
+model = NaiveBayes()
+model.fit(X_train, y_train)
+predictions = model.predict(X_test)
+```
+
+#### 4. K-Means聚类 (kmeans.py)
+无监督学习算法，通过迭代更新聚类中心将数据分为K个簇。
+
+**算法特点：**
+- 支持自定义聚类数量
+- 提供收敛判断
+- 支持聚类可视化（2D数据）
+
+**使用示例：**
+```python
+from src.traditional_ml import KMeans
+
+model = KMeans(n_clusters=3)
+model.fit(X_train)
+labels = model.predict(X_test)
+```
+
+#### 5. 线性回归 (linear_regression.py)
+回归算法，拟合特征与目标值之间的线性关系。
+
+**算法特点：**
+- 支持梯度下降和正规方程两种求解方法
+- 输出权重系数和截距
+- 提供R²评分
+
+**使用示例：**
+```python
+from src.traditional_ml import LinearRegression
+
+model = LinearRegression(method='normal_equation')
+model.fit(X_train, y_train)
+predictions = model.predict(X_test)
+```
+
+#### 6. 逻辑回归 (logistic_regression.py)
+二分类算法，使用sigmoid函数将线性组合映射到[0,1]区间。
+
+**算法特点：**
+- 输出概率估计
+- 提供精确率、召回率、F1分数等评估指标
+- 支持自定义分类阈值
+
+**使用示例：**
+```python
+from src.traditional_ml import LogisticRegression
+
+model = LogisticRegression(learning_rate=0.1)
+model.fit(X_train, y_train)
+predictions = model.predict(X_test)
+```
+
+### 三、数据加载工具 (utils/)
+
+#### 数据加载工具 (data_loader.py)
 
 提供数据加载和转换功能：
 - 读取 PKL 格式数据文件
@@ -94,6 +209,33 @@ python basic_nn.py
 ```bash
 cd src/neural_networks
 python mnist_classifier.py
+```
+
+运行传统机器学习算法：
+```bash
+# K近邻算法
+cd src/traditional_ml
+python knn.py
+
+# 决策树
+cd src/traditional_ml
+python decision_tree.py
+
+# 朴素贝叶斯
+cd src/traditional_ml
+python naive_bayes.py
+
+# K-Means聚类
+cd src/traditional_ml
+python kmeans.py
+
+# 线性回归
+cd src/traditional_ml
+python linear_regression.py
+
+# 逻辑回归
+cd src/traditional_ml
+python logistic_regression.py
 ```
 
 运行数据加载工具：
