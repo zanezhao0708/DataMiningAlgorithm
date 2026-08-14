@@ -31,7 +31,17 @@
 │   │   ├── hierarchical_clustering.py  # 层次聚类
 │   │   ├── gmm.py                  # 高斯混合模型
 │   │   ├── apriori.py              # Apriori关联规则
-│   │   └── polynomial_regression.py    # 多项式回归
+│   │   ├── polynomial_regression.py    # 多项式回归
+│   │   ├── kmedoids.py             # K-Medoids聚类
+│   │   ├── hmm.py                  # 隐马尔可夫模型
+│   │   ├── pagerank.py             # PageRank算法
+│   │   ├── svd.py                  # 奇异值分解
+│   │   ├── fpgrowth.py             # FP-Growth关联规则
+│   │   ├── gradient_boosting.py    # 梯度提升决策树
+│   │   ├── lda.py                  # 线性判别分析
+│   │   ├── softmax_regression.py   # Softmax回归
+│   │   ├── collaborative_filtering.py  # 协同过滤推荐
+│   │   └── spectral_clustering.py  # 谱聚类
 │   └── utils/                      # 工具函数
 │       └── data_loader.py          # 数据加载与处理工具
 ├── requirements.txt                # Python依赖列表
@@ -388,6 +398,173 @@ model.fit(X_train, y_train)
 predictions = model.predict(X_test)
 ```
 
+#### 19. K-Medoids聚类 (kmedoids.py)
+与K-Means类似的聚类算法，但使用实际数据点作为聚类中心，对离群点更鲁棒。
+
+**算法特点：**
+- 使用实际数据点作为中心（medoid）
+- 对离群点和噪声更鲁棒
+- 支持任意距离度量
+
+**使用示例：**
+```python
+from src.traditional_ml import KMedoids
+
+model = KMedoids(n_clusters=3)
+labels = model.fit_predict(X_train)
+```
+
+#### 20. 隐马尔可夫模型 (hmm.py)
+用于处理序列数据的统计模型，包含隐藏状态和观测状态。
+
+**算法特点：**
+- 使用Baum-Welch算法训练
+- 使用Viterbi算法解码
+- 适用于时序数据建模
+
+**使用示例：**
+```python
+from src.traditional_ml import HMM
+
+model = HMM(n_states=2, n_observations=3)
+model.fit(observations, n_iterations=50)
+hidden_states = model.predict(observations)
+```
+
+#### 21. PageRank (pagerank.py)
+基于链接分析的网页重要性排序算法，Google搜索引擎的核心算法。
+
+**算法特点：**
+- 基于链接分析
+- 支持阻尼系数调整
+- 输出节点重要性排名
+
+**使用示例：**
+```python
+from src.traditional_ml import PageRank
+
+model = PageRank(damping_factor=0.85)
+model.fit(adjacency_matrix)
+ranked = model.get_ranked_nodes(node_names)
+```
+
+#### 22. 奇异值分解 (svd.py)
+矩阵分解技术，用于降维、数据压缩和推荐系统。
+
+**算法特点：**
+- 矩阵分解
+- 支持降维和数据压缩
+- 提供方差贡献率
+
+**使用示例：**
+```python
+from src.traditional_ml import SVD
+
+model = SVD(n_components=10)
+X_transformed = model.fit_transform(X)
+X_reconstructed = model.reconstruct()
+```
+
+#### 23. FP-Growth关联规则 (fpgrowth.py)
+比Apriori更高效的频繁项集挖掘算法，使用FP树结构。
+
+**算法特点：**
+- 无需生成候选项集
+- 使用FP树压缩数据
+- 比Apriori效率更高
+
+**使用示例：**
+```python
+from src.traditional_ml import FPGrowth
+
+model = FPGrowth(min_support=0.3, min_confidence=0.6)
+model.fit(transactions)
+rules = model.get_top_rules(n=10)
+```
+
+#### 24. 梯度提升决策树 (gradient_boosting.py)
+通过迭代训练回归树拟合残差的集成学习方法。
+
+**算法特点：**
+- 迭代拟合残差
+- 支持学习率调整
+- 强大的回归能力
+
+**使用示例：**
+```python
+from src.traditional_ml import GradientBoosting
+
+model = GradientBoosting(n_estimators=100, learning_rate=0.1)
+model.fit(X_train, y_train)
+predictions = model.predict(X_test)
+```
+
+#### 25. 线性判别分析 (lda.py)
+有监督降维算法，最大化类间差异同时最小化类内差异。
+
+**算法特点：**
+- 有监督降维
+- 最大化类别可分性
+- 适用于分类问题
+
+**使用示例：**
+```python
+from src.traditional_ml import LDA
+
+model = LDA(n_components=2)
+X_transformed = model.fit_transform(X_train, y_train)
+```
+
+#### 26. Softmax回归 (softmax_regression.py)
+多分类逻辑回归，使用softmax函数输出类别概率。
+
+**算法特点：**
+- 支持多分类
+- 输出概率分布
+- 支持正则化
+
+**使用示例：**
+```python
+from src.traditional_ml import SoftmaxRegression
+
+model = SoftmaxRegression(learning_rate=0.1)
+model.fit(X_train, y_train)
+predictions = model.predict(X_test)
+```
+
+#### 27. 协同过滤 (collaborative_filtering.py)
+基于用户或物品相似度的推荐系统算法。
+
+**算法特点：**
+- 支持基于用户和基于物品
+- 余弦相似度度量
+- 生成个性化推荐
+
+**使用示例：**
+```python
+from src.traditional_ml import CollaborativeFiltering
+
+model = CollaborativeFiltering(method='user_based', k=5)
+model.fit(ratings_matrix)
+recommendations = model.recommend(user_id=0)
+```
+
+#### 28. 谱聚类 (spectral_clustering.py)
+基于图论和谱图理论的聚类算法，能处理任意形状的簇。
+
+**算法特点：**
+- 基于图论
+- 支持RBF和KNN相似度
+- 能发现任意形状的簇
+
+**使用示例：**
+```python
+from src.traditional_ml import SpectralClustering
+
+model = SpectralClustering(n_clusters=2, affinity='rbf')
+labels = model.fit_predict(X_train)
+```
+
 ### 三、数据加载工具 (utils/)
 
 #### 数据加载工具 (data_loader.py)
@@ -498,6 +675,46 @@ python apriori.py
 # 多项式回归
 cd src/traditional_ml
 python polynomial_regression.py
+
+# K-Medoids聚类
+cd src/traditional_ml
+python kmedoids.py
+
+# 隐马尔可夫模型
+cd src/traditional_ml
+python hmm.py
+
+# PageRank算法
+cd src/traditional_ml
+python pagerank.py
+
+# 奇异值分解
+cd src/traditional_ml
+python svd.py
+
+# FP-Growth关联规则
+cd src/traditional_ml
+python fpgrowth.py
+
+# 梯度提升决策树
+cd src/traditional_ml
+python gradient_boosting.py
+
+# 线性判别分析
+cd src/traditional_ml
+python lda.py
+
+# Softmax回归
+cd src/traditional_ml
+python softmax_regression.py
+
+# 协同过滤推荐
+cd src/traditional_ml
+python collaborative_filtering.py
+
+# 谱聚类
+cd src/traditional_ml
+python spectral_clustering.py
 ```
 
 运行数据加载工具：
@@ -530,5 +747,6 @@ zanezhao0708
 
 ## 更新日志
 
+- **2026-08-14**: 新增10个算法（K-Medoids、HMM、PageRank、SVD、FP-Growth、梯度提升、LDA、Softmax回归、协同过滤、谱聚类）
 - **2024-08-13**: 重构项目结构，补齐MNIST分类器完整训练代码
 - **初始版本**: 实现基础三层神经网络

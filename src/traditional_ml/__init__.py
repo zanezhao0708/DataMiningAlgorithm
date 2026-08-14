@@ -17,6 +17,16 @@ from .hierarchical_clustering import HierarchicalClustering
 from .gmm import GaussianMixtureModel
 from .apriori import Apriori
 from .polynomial_regression import PolynomialRegression
+from .kmedoids import KMedoids
+from .hmm import HMM
+from .pagerank import PageRank
+from .svd import SVD
+from .fpgrowth import FPGrowth
+from .gradient_boosting import GradientBoosting
+from .lda import LDA
+from .softmax_regression import SoftmaxRegression
+from .collaborative_filtering import CollaborativeFiltering
+from .spectral_clustering import SpectralClustering
 
 __all__ = [
     'KNN',
@@ -36,5 +46,15 @@ __all__ = [
     'HierarchicalClustering',
     'GaussianMixtureModel',
     'Apriori',
-    'PolynomialRegression'
+    'PolynomialRegression',
+    'KMedoids',
+    'HMM',
+    'PageRank',
+    'SVD',
+    'FPGrowth',
+    'GradientBoosting',
+    'LDA',
+    'SoftmaxRegression',
+    'CollaborativeFiltering',
+    'SpectralClustering'
 ]

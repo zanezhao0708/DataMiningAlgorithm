@@ -4,7 +4,10 @@
 """
 
 import numpy as np
-from .decision_tree import DecisionTree
+try:
+    from .decision_tree import DecisionTree
+except ImportError:
+    from decision_tree import DecisionTree
 from collections import Counter
 
 
