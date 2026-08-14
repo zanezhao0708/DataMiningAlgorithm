@@ -4,7 +4,6 @@ K-Means聚类算法实现
 """
 
 import numpy as np
-import matplotlib.pyplot as plt
 
 
 class KMeans:
@@ -115,6 +114,8 @@ class KMeans:
             X: 数据特征
             title: 图表标题
         """
+        import matplotlib.pyplot as plt  # 仅可视化时需要，避免部署环境强依赖
+
         X = np.array(X)
         if X.shape[1] != 2:
             print("可视化仅支持2维数据")
