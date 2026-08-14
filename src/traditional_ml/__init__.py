@@ -5,6 +5,18 @@ from .naive_bayes import NaiveBayes
 from .kmeans import KMeans
 from .linear_regression import LinearRegression
 from .logistic_regression import LogisticRegression
+from .svm import SVM
+from .random_forest import RandomForest
+from .pca import PCA
+from .dbscan import DBSCAN
+from .adaboost import AdaBoost
+from .perceptron import Perceptron
+from .ridge_regression import RidgeRegression
+from .lasso_regression import LassoRegression
+from .hierarchical_clustering import HierarchicalClustering
+from .gmm import GaussianMixtureModel
+from .apriori import Apriori
+from .polynomial_regression import PolynomialRegression
 
 __all__ = [
     'KNN',
@@ -12,5 +24,17 @@ __all__ = [
     'NaiveBayes',
     'KMeans',
     'LinearRegression',
-    'LogisticRegression'
+    'LogisticRegression',
+    'SVM',
+    'RandomForest',
+    'PCA',
+    'DBSCAN',
+    'AdaBoost',
+    'Perceptron',
+    'RidgeRegression',
+    'LassoRegression',
+    'HierarchicalClustering',
+    'GaussianMixtureModel',
+    'Apriori',
+    'PolynomialRegression'
 ]
