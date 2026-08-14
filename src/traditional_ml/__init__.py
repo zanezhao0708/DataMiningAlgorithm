@@ -27,6 +27,7 @@ from .lda import LDA
 from .softmax_regression import SoftmaxRegression
 from .collaborative_filtering import CollaborativeFiltering
 from .spectral_clustering import SpectralClustering
+from .tsne import TSNE
 
 __all__ = [
     'KNN',
@@ -56,5 +57,6 @@ __all__ = [
     'LDA',
     'SoftmaxRegression',
     'CollaborativeFiltering',
-    'SpectralClustering'
+    'SpectralClustering',
+    'TSNE'
 ]

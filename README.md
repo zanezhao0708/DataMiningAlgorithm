@@ -1,6 +1,6 @@
 # 数据挖掘算法实现集合
 
-本项目包含多种数据挖掘和机器学习算法的 Python 实现，涵盖神经网络、传统机器学习算法等。
+本项目包含多种数据挖掘和机器学习算法的 Python 实现，涵盖神经网络、传统机器学习算法，并附带一个交互式的 [ML算法可视化实验室](#ml算法可视化实验室)。
 
 ## 项目结构
 
@@ -9,6 +9,10 @@
 ├── data/                           # 数据文件目录
 │   ├── data_NN.pkl                 # 训练数据集
 │   └── my_dataset.csv              # CSV格式数据
+├── visualization_lab/              # ML算法可视化实验室（Web应用）
+│   ├── main.py                     # FastAPI后端
+│   ├── services/                   # 数据集生成与算法运行服务
+│   └── static/                     # 前端页面（Canvas可视化/决策树SVG）
 ├── src/                            # 源代码目录
 │   ├── neural_networks/            # 神经网络实现
 │   │   ├── basic_nn.py             # 基础三层神经网络
@@ -41,7 +45,8 @@
 │   │   ├── lda.py                  # 线性判别分析
 │   │   ├── softmax_regression.py   # Softmax回归
 │   │   ├── collaborative_filtering.py  # 协同过滤推荐
-│   │   └── spectral_clustering.py  # 谱聚类
+│   │   ├── spectral_clustering.py  # 谱聚类
+│   │   └── tsne.py                 # t-SNE降维
 │   └── utils/                      # 工具函数
 │       └── data_loader.py          # 数据加载与处理工具
 ├── requirements.txt                # Python依赖列表
@@ -565,6 +570,22 @@ model = SpectralClustering(n_clusters=2, affinity='rbf')
 labels = model.fit_predict(X_train)
 ```
 
+#### 29. t-SNE降维 (tsne.py)
+当下最流行的非线性降维可视化算法，通过保持高维邻居结构将数据映射到2D/3D。
+
+**算法特点：**
+- 二分搜索困惑度匹配的邻域宽度
+- t分布核 + KL散度梯度下降（带动量与早期放大）
+- 适合高维数据的可视化探索
+
+**使用示例：**
+```python
+from src.traditional_ml import TSNE
+
+model = TSNE(n_components=2, perplexity=20, n_iter=500, random_state=42)
+X_embedded = model.fit_transform(X)
+```
+
 ### 三、数据加载工具 (utils/)
 
 #### 数据加载工具 (data_loader.py)
@@ -737,6 +758,27 @@ python data_loader.py
 - `x_train`：训练集特征，形状为 (N, 784)
 - `t_train`：训练集标签，形状为 (N,)
 
+## ML算法可视化实验室
+
+交互式算法可视化 Web 应用，将本仓库 23 个算法变成"左边调参数、右边看效果"的实验台。
+
+```bash
+pip install numpy fastapi uvicorn
+cd visualization_lab && python main.py
+# 浏览器打开 http://localhost:8000
+```
+
+**功能一览：**
+
+| 任务 | 能力 |
+|------|------|
+| 分类 | 9 种分类器实时绘制决策边界，树模型附带树结构 SVG |
+| 聚类 | 6 种聚类算法，K-Means 支持迭代动画回放（质心轨迹） |
+| 回归 | 4 种回归算法拟合曲线对比，实时 R² |
+| 降维 | PCA / LDA / SVD / t-SNE 二维投影 |
+
+详见 [visualization_lab/README.md](visualization_lab/README.md)。
+
 ## 许可证
 
 本项目仅供学习和研究使用。
@@ -747,6 +789,7 @@ zanezhao0708
 
 ## 更新日志
 
+- **2026-08-14(二)**: 新增 t-SNE 降维算法与 ML算法可视化实验室（FastAPI Web 应用，23 个算法交互式可视化）；修复 GMM 协方差更新、多项式回归数值发散、SVD 方差贡献率等 bug
 - **2026-08-14**: 新增10个算法（K-Medoids、HMM、PageRank、SVD、FP-Growth、梯度提升、LDA、Softmax回归、协同过滤、谱聚类）
 - **2024-08-13**: 重构项目结构，补齐MNIST分类器完整训练代码
 - **初始版本**: 实现基础三层神经网络

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ML算法可视化实验室</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <header class="topbar">
+        <div class="logo">
+            <span class="logo-icon">◈</span>
+            <h1>ML算法可视化实验室</h1>
+        </div>
+        <div class="topbar-right">
+            <span class="badge" id="algo-count">0 个算法</span>
+            <a class="github-link" href="https://github.com/zanezhao0708/DataMiningAlgorithm" target="_blank">GitHub ↗</a>
+        </div>
+    </header>
+
+    <main class="layout">
+        <!-- 左侧控制面板 -->
+        <aside class="sidebar">
+            <nav class="tabs" id="task-tabs">
+                <button class="tab active" data-task="classification">分类</button>
+                <button class="tab" data-task="clustering">聚类</button>
+                <button class="tab" data-task="regression">回归</button>
+                <button class="tab" data-task="dim_reduction">降维</button>
+            </nav>
+
+            <section class="panel">
+                <h2 class="panel-title">数据集</h2>
+                <div class="control">
+                    <label>类型</label>
+                    <select id="dataset-select"></select>
+                </div>
+                <div class="control" id="control-nclasses" hidden>
+                    <label>类别数 <span class="val" id="val-nclasses">3</span></label>
+                    <input type="range" id="param-nclasses" min="2" max="6" step="1" value="3">
+                </div>
+                <div class="control">
+                    <label>样本数 <span class="val" id="val-nsamples">300</span></label>
+                    <input type="range" id="param-nsamples" min="60" max="600" step="20" value="300">
+                </div>
+                <div class="control">
+                    <label>噪声 <span class="val" id="val-noise">0.15</span></label>
+                    <input type="range" id="param-noise" min="0" max="0.5" step="0.01" value="0.15">
+                </div>
+                <button class="btn ghost" id="btn-regen">↻ 重新生成数据</button>
+            </section>
+
+            <section class="panel">
+                <h2 class="panel-title">算法</h2>
+                <div class="algo-list" id="algo-list"></div>
+            </section>
+
+            <section class="panel">
+                <h2 class="panel-title">算法参数</h2>
+                <div id="param-container"></div>
+                <button class="btn primary" id="btn-run">▶ 运行实验</button>
+            </section>
+        </aside>
+
+        <!-- 右侧可视化区 -->
+        <section class="stage">
+            <div class="stage-head">
+                <h2 id="stage-title">选择算法并运行</h2>
+                <div class="metrics" id="metrics"></div>
+            </div>
+
+            <div class="canvas-wrap">
+                <canvas id="main-canvas"></canvas>
+                <div class="loading" id="loading" hidden>
+                    <div class="spinner"></div>
+                    <span>计算中...</span>
+                </div>
+            </div>
+
+            <!-- 聚类动画控制 -->
+            <div class="anim-bar" id="anim-bar" hidden>
+                <button class="btn icon" id="anim-play" title="播放/暂停">▶</button>
+                <button class="btn icon" id="anim-prev" title="上一步">⏮</button>
+                <button class="btn icon" id="anim-next" title="下一步">⏭</button>
+                <input type="range" id="anim-slider" min="0" max="0" step="1" value="0">
+                <span class="anim-label" id="anim-label">迭代 0</span>
+            </div>
+
+            <!-- 决策树面板 -->
+            <div class="tree-panel" id="tree-panel" hidden>
+                <h3>决策树结构 <span class="tree-hint">（随机森林展示第一棵树）</span></h3>
+                <div class="tree-scroll" id="tree-container"></div>
+            </div>
+        </section>
+    </main>
+
+    <script src="js/app.js"></script>
+</body>
+</html>

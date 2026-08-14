@@ -94,11 +94,11 @@ class GaussianMixtureModel:
             # 更新均值
             self.means[k] = np.sum(responsibilities[:, k].reshape(-1, 1) * X, axis=0) / responsibilities[:, k].sum()
 
-            # 更新协方差矩阵
+            # 更新协方差矩阵：(加权diff)^T @ diff，得到(n_features, n_features)
             diff = X - self.means[k]
             self.covariances[k] = np.dot(
-                responsibilities[:, k].reshape(-1, 1) * diff,
-                diff.T
+                (responsibilities[:, k].reshape(-1, 1) * diff).T,
+                diff
             ) / responsibilities[:, k].sum()
 
             # 添加小的对角线元素防止奇异矩阵

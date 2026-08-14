@@ -59,6 +59,12 @@ class PolynomialRegression:
         self.X_poly = self._polynomial_features(X)
         n_samples, n_poly_features = self.X_poly.shape
 
+        # 标准化多项式特征（高阶特征数值范围大，不标准化会导致梯度下降发散）
+        self.poly_mean = self.X_poly.mean(axis=0)
+        self.poly_std = self.X_poly.std(axis=0)
+        self.poly_std[self.poly_std == 0] = 1
+        self.X_poly = (self.X_poly - self.poly_mean) / self.poly_std
+
         # 初始化参数
         self.weights = np.zeros(n_poly_features)
         self.bias = 0
@@ -97,6 +103,8 @@ class PolynomialRegression:
             预测结果，形状为(n_samples,)
         """
         X_poly = self._polynomial_features(np.array(X))
+        # 使用训练时保存的均值和标准差做同样的标准化
+        X_poly = (X_poly - self.poly_mean) / self.poly_std
         return np.dot(X_poly, self.weights) + self.bias
 
     def score(self, X, y):

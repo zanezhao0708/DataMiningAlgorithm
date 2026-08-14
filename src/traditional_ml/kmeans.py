@@ -22,6 +22,7 @@ class KMeans:
         self.tol = tol
         self.centroids = None
         self.labels = None
+        self.history = []  # 记录每次迭代的中心点，用于动画可视化
 
     def fit(self, X):
         """
@@ -36,6 +37,9 @@ class KMeans:
         # 随机初始化聚类中心
         random_indices = np.random.choice(n_samples, self.n_clusters, replace=False)
         self.centroids = X[random_indices]
+
+        # 记录初始状态
+        self.history = [{'centroids': self.centroids.copy()}]
 
         # 迭代更新
         for i in range(self.max_iters):
@@ -53,11 +57,12 @@ class KMeans:
 
             # 检查是否收敛
             centroid_shift = np.linalg.norm(new_centroids - self.centroids)
+            self.centroids = new_centroids
+            self.history.append({'centroids': new_centroids.copy(),
+                                 'labels': self.labels.copy()})
             if centroid_shift < self.tol:
                 print(f"K-Means在{i+1}次迭代后收敛")
                 break
-
-            self.centroids = new_centroids
 
         print(f"K-Means训练完成，聚类数: {self.n_clusters}")
 
