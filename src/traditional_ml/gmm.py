@@ -43,6 +43,16 @@ class GaussianMixtureModel:
         # EM算法迭代
         prev_log_likelihood = -float('inf')
 
+        # 记录训练过程（EM每轮参数快照，供可视化动画回放）
+        self.history = []
+        self.history.append({
+            'means': self.means.copy(),
+            'covariances': np.array([c.copy() for c in self.covariances]),
+            'weights': self.weights.copy(),
+            'labels': np.zeros(n_samples, dtype=int),
+            'log_likelihood': -float('inf'),
+        })
+
         for iteration in range(self.max_iter):
             # E步：计算后验概率
             responsibilities = self._expectation(X)
@@ -52,6 +62,14 @@ class GaussianMixtureModel:
 
             # 计算对数似然
             log_likelihood = self._compute_log_likelihood(X)
+
+            self.history.append({
+                'means': self.means.copy(),
+                'covariances': np.array([c.copy() for c in self.covariances]),
+                'weights': self.weights.copy(),
+                'labels': np.argmax(responsibilities, axis=1),
+                'log_likelihood': float(log_likelihood),
+            })
 
             if iteration % 10 == 0:
                 print(f"迭代 {iteration}, 对数似然: {log_likelihood:.4f}")

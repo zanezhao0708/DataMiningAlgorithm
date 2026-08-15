@@ -48,12 +48,14 @@ def _slider(key, label, lo, hi, default, step=1):
 CLASSIFIERS = {
     'knn': {
         'name': 'K近邻 KNN',
+        'animated': True,
         'params': [_slider('k', '邻居数 K', 1, 25, 5)],
         'build': lambda p: KNN(k=p['k']),
     },
     'decision_tree': {
         'name': '决策树',
         'tree': True,
+        'animated': True,
         'params': [_slider('max_depth', '最大深度', 1, 12, 4)],
         'build': lambda p: DecisionTree(max_depth=p['max_depth']),
     },
@@ -75,6 +77,7 @@ CLASSIFIERS = {
     },
     'naive_bayes': {
         'name': '朴素贝叶斯',
+        'animated': True,
         'params': [],
         'build': lambda p: NaiveBayes(),
     },
@@ -88,12 +91,14 @@ CLASSIFIERS = {
     },
     'adaboost': {
         'name': 'AdaBoost',
+        'animated': True,
         'params': [_slider('n_estimators', '弱分类器数', 5, 60, 20)],
         'build': lambda p: AdaBoost(n_estimators=p['n_estimators']),
     },
     'random_forest': {
         'name': '随机森林',
         'tree': 'forest',
+        'animated': True,
         'params': [_slider('n_trees', '树数量', 3, 30, 10),
                    _slider('max_depth', '最大深度', 2, 12, 6)],
         'build': lambda p: RandomForest(n_trees=p['n_trees'], max_depth=p['max_depth']),
@@ -188,6 +193,21 @@ def run_classification(algorithm, params, X, y, test_ratio=0.2):
         frames = _mlp_frames(model, mesh, X_tr, y_tr, GRID_SIZE)
         result['frames'] = frames
         result['history'] = model.history
+    elif algorithm == 'knn':
+        frames = _knn_frames(params, X_tr, y_fit, mesh, y_tr)
+        result['frames'], result['history'] = frames
+    elif algorithm == 'decision_tree':
+        frames = _tree_growth_frames(params, X_tr, y_fit, mesh, y_tr)
+        result['frames'], result['history'] = frames
+    elif algorithm == 'naive_bayes':
+        frames = _nb_frames(X_tr, y_fit, mesh, y_tr)
+        result['frames'], result['history'] = frames
+    elif algorithm == 'adaboost':
+        frames = _adaboost_frames(model, mesh, X_tr, y_tr)
+        result['frames'], result['history'] = frames
+    elif algorithm == 'random_forest':
+        frames = _forest_frames(model, mesh, X_tr, y_tr)
+        result['frames'], result['history'] = frames
     elif spec.get('animated') and getattr(model, 'history', None):
         # 梯度下降类算法：用训练过程的权重快照生成决策边界动画帧
         frames = _gd_classification_frames(algorithm, model, mesh, X_tr, y_tr)
@@ -298,6 +318,102 @@ def _gd_classification_frames(algorithm, model, mesh, X_tr, y_tr):
     return frames
 
 
+def _binary01(y):
+    """把任意二分类标签映射为 0/1（多分类原样返回）"""
+    y = np.asarray(y)
+    classes = np.unique(y)
+    if len(classes) == 2:
+        return np.where(y == classes[0], 0, 1)
+    return y.astype(int)
+
+
+def _knn_frames(params, X_tr, y_fit, mesh, y_tr):
+    """K值扫描动画：观察 K 从小到大，边界从过拟合到平滑"""
+    y01 = _binary01(y_tr)
+    frames, history = [], []
+    ks = sorted(set(list(range(1, int(params['k']) + 1, 2)) + [int(params['k'])]))
+    for k in ks:
+        m = KNN(k=k)
+        m.fit(X_tr, y_fit)
+        grid = m.predict(mesh).astype(int)
+        acc = float(np.mean(m.predict(X_tr).astype(int) == y01)) if len(np.unique(y_tr)) == 2 \
+            else float(np.mean(m.predict(X_tr).astype(int) == y_tr))
+        frames.append({'epoch': k, 'label': f'K = {k}',
+                       'grid': grid.tolist(), 'loss': 0.0, 'accuracy': acc})
+        history.append({'loss': 0.0, 'accuracy': acc})
+    return frames, history
+
+
+def _tree_growth_frames(params, X_tr, y_fit, mesh, y_tr):
+    """深度生长动画：树逐层变深，边界从粗糙到精细"""
+    y01 = _binary01(y_tr)
+    frames, history = [], []
+    for d in range(1, int(params['max_depth']) + 1):
+        m = DecisionTree(max_depth=d)
+        m.fit(X_tr, y_fit)
+        grid = m.predict(mesh).astype(int)
+        acc = float(np.mean(_binary01(m.predict(X_tr)) == y01))
+        frames.append({'epoch': d, 'label': f'深度 {d}',
+                       'grid': grid.tolist(), 'loss': 0.0, 'accuracy': acc})
+        history.append({'loss': 0.0, 'accuracy': acc})
+    return frames, history
+
+
+def _nb_frames(X_tr, y_fit, mesh, y_tr, steps=20):
+    """增量学习动画：朴素贝叶斯逐批吃进样本，高斯参数逐步收敛"""
+    y01 = _binary01(y_tr)
+    frames, history = [], []
+    n = len(X_tr)
+    for s in range(1, steps + 1):
+        upto = max(2, int(n * s / steps))
+        m = NaiveBayes()
+        m.fit(X_tr[:upto], y_fit[:upto])
+        grid = m.predict(mesh).astype(int)
+        acc = float(np.mean(_binary01(m.predict(X_tr)) == y01))
+        frames.append({'epoch': s, 'label': f'样本 {upto}/{n}',
+                       'grid': grid.tolist(), 'loss': 0.0, 'accuracy': acc})
+        history.append({'loss': 0.0, 'accuracy': acc})
+    return frames, history
+
+
+def _adaboost_frames(model, mesh, X_tr, y_tr):
+    """弱分类器叠加动画：每个stump按权重加入集成，边界逐步细化"""
+    y01 = _binary01(y_tr)
+    frames, history = [], []
+    agg = np.zeros(len(mesh))
+    agg_tr = np.zeros(len(X_tr))
+    for t, (stump, w) in enumerate(zip(model.estimators, model.estimator_weights), 1):
+        agg += w * model._stump_predict(mesh, stump)
+        agg_tr += w * model._stump_predict(X_tr, stump)
+        grid = np.where(np.sign(agg) == -1, 0, 1)
+        acc = float(np.mean(np.where(np.sign(agg_tr) == -1, 0, 1) == y01))
+        frames.append({'epoch': t, 'label': f'弱分类器 {t}',
+                       'grid': grid.astype(int).tolist(),
+                       'loss': 0.0, 'accuracy': acc})
+        history.append({'loss': 0.0, 'accuracy': acc})
+    return frames, history
+
+
+def _forest_frames(model, mesh, X_tr, y_tr):
+    """逐树投票动画：森林中每多一棵树，投票边界更平滑"""
+    y_tr = np.asarray(y_tr).astype(int)
+    n_classes = len(np.unique(y_tr))
+    frames, history = [], []
+    votes = np.zeros((len(mesh), n_classes))
+    votes_tr = np.zeros((len(X_tr), n_classes))
+    for t, tree_info in enumerate(model.trees, 1):
+        tree = tree_info['tree']
+        fi = tree_info['feature_indices']
+        votes[np.arange(len(mesh)), tree.predict(mesh[:, fi]).astype(int)] += 1
+        votes_tr[np.arange(len(X_tr)), tree.predict(X_tr[:, fi]).astype(int)] += 1
+        grid = np.argmax(votes, axis=1)
+        acc = float(np.mean(np.argmax(votes_tr, axis=1) == y_tr))
+        frames.append({'epoch': t, 'label': f'树 {t}/{len(model.trees)}',
+                       'grid': grid.tolist(), 'loss': 0.0, 'accuracy': acc})
+        history.append({'loss': 0.0, 'accuracy': acc})
+    return frames, history
+
+
 def serialize_tree(node, feature_names):
     """把决策树嵌套dict序列化为前端可渲染的JSON"""
     if node.get('leaf'):
@@ -321,22 +437,26 @@ CLUSTERERS = {
     },
     'kmedoids': {
         'name': 'K-Medoids',
+        'animated': True,
         'params': [_slider('n_clusters', '聚类数 K', 2, 6, 3)],
         'build': lambda p: KMedoids(n_clusters=p['n_clusters'], max_iters=50),
     },
     'dbscan': {
         'name': 'DBSCAN',
+        'animated': True,
         'params': [_slider('eps', '邻域半径 ε', 0.05, 1.2, 0.3, 0.05),
                    _slider('min_samples', '最小样本数', 3, 15, 5)],
         'build': lambda p: DBSCAN(eps=p['eps'], min_samples=p['min_samples']),
     },
     'gmm': {
         'name': '高斯混合 GMM',
+        'animated': True,
         'params': [_slider('n_components', '成分数 K', 2, 6, 3)],
         'build': lambda p: GaussianMixtureModel(n_components=p['n_components'], max_iter=100),
     },
     'hierarchical': {
         'name': '层次聚类',
+        'animated': True,
         'params': [_slider('n_clusters', '聚类数 K', 2, 6, 3),
                    {'key': 'linkage', 'label': '链接方式', 'type': 'select',
                     'options': ['single', 'complete', 'average'], 'default': 'complete'}],
@@ -345,6 +465,7 @@ CLUSTERERS = {
     },
     'spectral': {
         'name': '谱聚类',
+        'animated': True,
         'params': [_slider('n_clusters', '聚类数 K', 2, 6, 2),
                    _slider('gamma', 'RBF γ', 1, 60, 20)],
         'build': lambda p: SpectralClustering(n_clusters=p['n_clusters'],
@@ -379,16 +500,58 @@ def run_clustering(algorithm, params, X, y=None):
         result['noise'] = (np.asarray(labels) == -1).tolist()
 
     # K-Means 迭代动画帧
-    if spec.get('animated') and getattr(model, 'history', None):
+    if algorithm in ('kmeans', 'kmedoids') and getattr(model, 'history', None):
         frames = []
         for i, frame in enumerate(model.history):
-            f = {'step': i, 'centroids': frame['centroids'].tolist()}
+            f = {'step': i, 'label': f'迭代 {i}',
+                 'centroids': frame['centroids'].tolist()}
             if 'labels' in frame:
                 f['labels'] = frame['labels'].astype(int).tolist()
             frames.append(f)
-        result['frames'] = frames
+        result['frames'] = _sample_frames(frames, 40)
+    elif algorithm == 'dbscan' and getattr(model, 'history', None):
+        n = len(X)
+        frames = [{'step': i, 'label': f'已聚类 {int((snap != -1).sum())}/{n}',
+                   'labels': snap.astype(int).tolist(),
+                   'noise': (snap == -1).tolist()}
+                  for i, snap in enumerate(model.history)]
+        result['frames'] = _sample_frames(frames, 40)
+    elif algorithm == 'gmm' and getattr(model, 'history', None):
+        frames = []
+        for i, snap in enumerate(model.history):
+            g = []
+            for k in range(len(snap['means'])):
+                g.append({'mean': snap['means'][k].tolist(),
+                          'cov': snap['covariances'][k].tolist()})
+            ll = float(snap.get('log_likelihood', 0.0))
+            frames.append({'step': i, 'label': f'EM {i}',
+                           'labels': snap['labels'].astype(int).tolist(),
+                           'gaussians': g,
+                           'log_likelihood': ll if np.isfinite(ll) else 0.0})
+        result['frames'] = _sample_frames(frames, 40)
+        result['history'] = [{'loss': -f.get('log_likelihood', 0.0) if np.isfinite(f.get('log_likelihood', 0)) else 0.0,
+                              'accuracy': 0.0} for f in result['frames']]
+    elif algorithm == 'hierarchical' and getattr(model, 'history', None):
+        total = len(model.history)
+        frames = [{'step': i, 'label': f'合并 {i}（剩 {total - i} 簇）',
+                   'labels': snap.astype(int).tolist()}
+                  for i, snap in enumerate(model.history)]
+        result['frames'] = _sample_frames(frames, 40)
+    elif algorithm == 'spectral' and getattr(model, 'kmeans_history', None):
+        frames = [{'step': i, 'label': f'K-Means 迭代 {i}',
+                   'labels': snap.astype(int).tolist()}
+                  for i, snap in enumerate(model.kmeans_history)]
+        result['frames'] = _sample_frames(frames, 40)
 
     return result
+
+
+def _sample_frames(frames, max_frames):
+    """等距采样动画帧，保留首尾帧"""
+    if len(frames) <= max_frames:
+        return frames
+    idx = np.linspace(0, len(frames) - 1, max_frames).astype(int)
+    return [frames[i] for i in idx]
 
 
 def silhouette(X, labels):
@@ -442,6 +605,7 @@ REGRESSORS = {
     },
     'ridge_regression': {
         'name': '岭回归 (L2)',
+        'animated': True,
         'params': [_slider('alpha', '正则强度 α', 0.0, 10.0, 1.0, 0.1)],
         'build': lambda p: RidgeRegression(alpha=p['alpha'], method='normal_equation'),
     },
@@ -476,11 +640,40 @@ def run_regression(algorithm, params, X, y):
     }
 
     # 梯度下降类回归：用权重快照生成拟合曲线演化动画帧
-    if spec.get('animated') and getattr(model, 'history', None):
+    if algorithm == 'ridge_regression':
+        # 岭回归无迭代过程：改为正则强度 α 扫描动画，观察收缩效应
+        frames = _ridge_frames(params, np.asarray(X), np.asarray(y), curve_x)
+        result['frames'] = frames
+        result['history'] = [{'loss': f['loss'], 'accuracy': 0.0}
+                             for f in frames]
+    elif spec.get('animated') and getattr(model, 'history', None):
         result['frames'] = _gd_regression_frames(model, curve_x)
         result['history'] = [{'loss': f['loss'], 'accuracy': 0.0}
                              for f in result['frames']]
     return result
+
+
+def _ridge_frames(params, X, y, curve_x, steps=24):
+    """α 扫描动画：正则强度从 0 逐渐增大，拟合曲线从贴合数据到被压平"""
+    alpha_max = float(params['alpha'])
+    alphas = list(np.linspace(0.0, alpha_max, steps))
+    if alpha_max > 0:
+        alphas += [alpha_max]
+    frames, seen = [], set()
+    for i, a in enumerate(alphas):
+        m = RidgeRegression(alpha=float(a), method='normal_equation')
+        m.fit(X, y)
+        curve_y = m.predict(curve_x).ravel()
+        pred = m.predict(X).ravel()
+        mse = float(np.mean((y - pred) ** 2))
+        key = round(float(a), 6)
+        if key in seen:
+            continue
+        seen.add(key)
+        frames.append({'epoch': i, 'label': f'α = {a:.2f}',
+                       'curve': [[float(u), float(v)] for u, v in zip(curve_x.ravel(), curve_y)],
+                       'loss': mse})
+    return frames
 
 
 def _gd_regression_frames(model, curve_x, max_frames=40):
@@ -513,6 +706,7 @@ def _gd_regression_frames(model, curve_x, max_frames=40):
 REDUCERS = {
     'pca': {
         'name': '主成分分析 PCA',
+        'animated': True,
         'params': [{'key': 'n_components', 'label': '保留主成分数', 'type': 'select',
                     'options': [2], 'default': 2}],
         'desc': '线性降维，最大化方差保留',
@@ -520,18 +714,21 @@ REDUCERS = {
     },
     'lda': {
         'name': '线性判别分析 LDA',
+        'animated': True,
         'params': [],
         'desc': '有监督降维，最大化类间分离',
         'build': lambda p: LDA(n_components=2),
     },
     'svd': {
         'name': '奇异值分解 SVD',
+        'animated': True,
         'params': [],
         'desc': '矩阵分解降维',
         'build': lambda p: SVD(n_components=2),
     },
     'tsne': {
         'name': 't-SNE',
+        'animated': True,
         'params': [_slider('perplexity', '困惑度', 5, 50, 20),
                    _slider('n_iter', '迭代次数', 100, 1000, 400, 50)],
         'desc': '非线性降维，保持局部邻居结构',
@@ -542,15 +739,14 @@ REDUCERS = {
 
 
 def run_dim_reduction(algorithm, params, X, y):
-    """降维到2D并返回投影坐标"""
+    """降维到2D并返回投影坐标与过程动画帧"""
     spec = REDUCERS[algorithm]
     model = spec['build'](params)
-    X = np.asarray(X)
+    X = np.asarray(X, dtype=float)
+    y = np.asarray(y, dtype=int)
 
     if algorithm == 'lda':
-        emb = model.fit_transform(X, np.asarray(y, dtype=int))
-    elif algorithm == 'svd':
-        emb = model.fit_transform(X)
+        emb = model.fit_transform(X, y)
     else:
         emb = model.fit_transform(X)
 
@@ -563,7 +759,100 @@ def run_dim_reduction(algorithm, params, X, y):
     if algorithm == 'tsne':
         result['kl'] = float(model.kl_divergence_)
 
+    # ---- 过程动画帧 ----
+    if algorithm == 'tsne' and getattr(model, 'history', None):
+        frames, last_iter = [], None
+        for snap in model.history:
+            if snap['iter'] == last_iter:
+                frames.pop()  # 跳过同一迭代的重复快照
+            kl = snap.get('kl', 0.0)
+            frames.append({'step': snap['iter'],
+                           'label': f'迭代 {snap["iter"]}',
+                           'embedding': snap['embedding'].tolist(),
+                           'kl': float(kl) if np.isfinite(kl) else 0.0})
+            last_iter = snap['iter']
+        result['frames'] = _sample_frames(frames, 40)
+    elif algorithm in ('pca', 'svd'):
+        frames = _power_iteration_frames(X, model, kind=algorithm)
+        if frames:
+            result['frames'] = frames
+    elif algorithm == 'lda':
+        frames = _lda_interp_frames(X, model.scalings)
+        if frames:
+            result['frames'] = frames
+
     return result
+
+
+def _power_iteration_frames(X, model, kind, n_iter=30, max_frames=40):
+    """幂迭代（正交子空间迭代）动画：投影方向逐步收敛到主成分/奇异向量
+
+    PCA 用协方差矩阵，SVD 用 XᵀX；每轮记录一次投影快照。
+    帧间保持方向连续，末帧与最终分解结果符号一致。
+    """
+    n_features = X.shape[1]
+    if n_features < 2:
+        return None
+
+    # 与最终分解结果对齐符号，保证动画末帧与静态结果一致
+    if kind == 'pca' and getattr(model, 'components', None) is not None:
+        target = np.asarray(model.components)[:, :2]
+    elif kind == 'svd' and getattr(model, 'Vt', None) is not None:
+        target = np.asarray(model.Vt)[:2, :].T
+    else:
+        target = None
+
+    if kind == 'pca':
+        Xp = X - X.mean(axis=0)
+    else:
+        Xp = X
+    C = Xp.T @ Xp
+
+    rng = np.random.RandomState(7)
+    V, _ = np.linalg.qr(rng.randn(n_features, 2))  # 随机正交初始方向
+
+    Vs = []
+    for it in range(n_iter + 1):
+        V2, _ = np.linalg.qr(V)
+        if Vs:
+            for j in range(2):
+                if float(V2[:, j] @ Vs[-1][:, j]) < 0:
+                    V2[:, j] *= -1  # 与上一帧方向连续
+        Vs.append(V2)
+        V = C @ V2
+
+    # 末帧与目标方向对齐（整列翻转作用于所有帧，保持帧间连续）
+    if target is not None:
+        for j in range(2):
+            if float(Vs[-1][:, j] @ target[:, j]) < 0:
+                for V2 in Vs:
+                    V2[:, j] *= -1
+
+    frames = [{'step': it, 'label': f'幂迭代 {it}',
+               'embedding': (Xp @ V2).tolist()}
+              for it, V2 in enumerate(Vs)]
+    return _sample_frames(frames, max_frames)
+
+
+def _lda_interp_frames(X, scalings, steps=24):
+    """判别方向插值动画：从原始坐标视角平滑旋转到LDA判别空间"""
+    scalings = np.asarray(scalings, dtype=float)
+    n_features = X.shape[1]
+    if scalings.shape[0] != n_features or n_features < 2:
+        return None
+
+    W0 = np.zeros_like(scalings)
+    W0[0, 0] = 1.0  # 初始视角：原始前两维坐标
+    if W0.shape[1] > 1:
+        W0[1, 1] = 1.0
+
+    frames = []
+    for i in range(steps + 1):
+        t = i / steps
+        Wt = (1 - t) * W0 + t * scalings
+        frames.append({'step': i, 'label': f'投影旋转 {int(t * 100)}%',
+                       'embedding': (X @ Wt).tolist()})
+    return frames
 
 
 # 统一的任务分发

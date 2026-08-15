@@ -38,10 +38,20 @@ class KMedoids:
         # 计算距离矩阵
         distances = self._compute_distance_matrix(X)
 
+        # 记录训练过程（质心与标签快照，供可视化动画回放）
+        self.history = []
+
+        def _record(indices, labels):
+            self.history.append({
+                'centroids': X[indices].copy(),
+                'labels': labels.copy(),
+            })
+
         for iteration in range(self.max_iters):
             # 分配样本到最近的中心点
             medoid_distances = distances[:, self.medoid_indices]
             labels = np.argmin(medoid_distances, axis=1)
+            _record(self.medoid_indices, labels)
 
             # 更新中心点
             new_medoid_indices = self.medoid_indices.copy()

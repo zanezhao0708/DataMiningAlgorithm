@@ -159,6 +159,10 @@ class TSNE:
         Y = np.random.randn(n_samples, self.n_components) * 1e-4
         velocity = np.zeros_like(Y)
 
+        # 记录嵌入演化快照（供可视化动画回放）
+        self.history = [{'iter': 0, 'embedding': Y.copy(), 'kl': float('inf')}]
+        snap_every = max(1, self.n_iter // 40)
+
         # 3. 梯度下降（带动量）
         exaggerate_until = min(250, self.n_iter // 4)
         for iteration in range(self.n_iter):
@@ -176,9 +180,13 @@ class TSNE:
             # 中心化，防止漂移
             Y -= np.mean(Y, axis=0)
 
+            if iteration % snap_every == 0 or iteration == self.n_iter - 1:
+                self.history.append({'iter': iteration, 'embedding': Y.copy(), 'kl': 0.0})
+
             if iteration % 100 == 0:
                 Q, _ = self._compute_q_probs(Y)
                 kl = np.sum(P * np.log(P / Q))
+                self.history[-1]['kl'] = float(kl)
                 print(f"迭代 {iteration}, KL散度: {kl:.4f}")
 
         Q, _ = self._compute_q_probs(Y)

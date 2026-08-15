@@ -85,6 +85,9 @@ class SpectralClustering:
         random_indices = np.random.choice(n_samples, k, replace=False)
         centroids = X[random_indices]
 
+        # 记录每轮标签（供可视化动画回放）
+        self.kmeans_history = []
+
         # 迭代
         for _ in range(100):
             # 分配簇
@@ -92,6 +95,7 @@ class SpectralClustering:
             for i in range(k):
                 distances[:, i] = np.linalg.norm(X - centroids[i], axis=1)
             labels = np.argmin(distances, axis=1)
+            self.kmeans_history.append(labels.copy())
 
             # 更新聚类中心
             new_centroids = np.zeros_like(centroids)
@@ -106,6 +110,7 @@ class SpectralClustering:
                 break
             centroids = new_centroids
 
+        self.kmeans_history.append(labels.copy())
         return labels
 
     def fit_predict(self, X):

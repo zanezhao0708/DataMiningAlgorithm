@@ -40,6 +40,12 @@ class DBSCAN:
         # 找到所有核心点
         core_points = np.sum(distances <= self.eps, axis=1) >= self.min_samples
 
+        # 记录扩展过程（每处理若干个样本记录一次标签快照，供可视化动画回放）
+        self.history = []
+        self.history.append(self.labels.copy())
+        record_every = max(1, n_samples // 60)
+
+        processed = 0
         cluster_id = 0
 
         # 对每个核心点进行聚类
@@ -67,7 +73,12 @@ class DBSCAN:
                         if core_points[neighbor]:
                             queue.append(neighbor)
 
+                processed += 1
+                if processed % record_every == 0:
+                    self.history.append(self.labels.copy())
+
             cluster_id += 1
+            self.history.append(self.labels.copy())
 
         self.n_clusters = cluster_id
         n_noise = np.sum(self.labels == -1)

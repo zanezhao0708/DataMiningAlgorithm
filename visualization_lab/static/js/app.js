@@ -16,6 +16,7 @@ const state = {
     anim: { frames: [], frame: 0, playing: false, timer: null, type: null },
     abort: null,
     pendingRun: null,   // 请求合并：防止滑块拖动时请求堆积
+    userSelected: false, // 用户在tab初始化期间手动选择过算法
 };
 
 // 类别配色（TF Playground 橙蓝配色）
@@ -43,6 +44,7 @@ function bindUI() {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             tab.classList.add('active');
             state.task = tab.dataset.task;
+            state.userSelected = false;
             stopAnim();
             hideTree();
             $('anim-bar').hidden = true;
@@ -50,7 +52,9 @@ function bindUI() {
             $('control-testratio').hidden = state.task !== 'classification';
             loadPreviews().then(() => {
                 renderAlgoList();
-                selectAlgorithm(state.catalog[state.task][0].id);
+                // 加载期间用户已手动选择算法时，不再强制重置为第一个
+                if (!state.userSelected) selectAlgorithm(state.catalog[state.task][0].id);
+                state.userSelected = false;
                 regenerateData(true);
             });
         });
@@ -217,6 +221,7 @@ function renderAlgoList() {
 
 function selectAlgorithm(id) {
     state.algorithm = id;
+    state.userSelected = true;
     document.querySelectorAll('.algo-item').forEach(el =>
         el.classList.toggle('active', el.dataset.id === id));
     renderParams();
@@ -318,12 +323,13 @@ async function runAlgorithm() {
         state.elapsed = performance.now() - t0;
 
         stopAnim();
-        // 动画帧（K-Means聚类 / MLP / 梯度下降分类 / 梯度下降回归）
-        if (state.result.frames && state.result.frames.length) {
+        // 动画帧（聚类过程 / 分类边界演化 / 回归拟合演化 / 降维投影演化）
+        if (state.result.frames && state.result.frames.length > 1) {
             state.anim.frames = state.result.frames;
             state.anim.frame = state.result.frames.length - 1;  // 默认显示最终状态
-            state.anim.type = state.task === 'clustering' ? 'kmeans'
-                : state.task === 'regression' ? 'reg' : 'grid';
+            state.anim.type = state.task === 'clustering' ? 'cluster'
+                : state.task === 'regression' ? 'reg'
+                : state.task === 'dim_reduction' ? 'embed' : 'grid';
             $('anim-bar').hidden = false;
             $('anim-slider').max = state.result.frames.length - 1;
             $('anim-slider').value = state.anim.frame;
@@ -332,8 +338,9 @@ async function runAlgorithm() {
         }
         draw();
 
-        // 损失曲线（MLP）
-        if (state.result.history) drawLossChart(state.result.history);
+        // 损失曲线
+        if (state.result.history && state.result.history.length > 1)
+            drawLossChart(state.result.history);
         else $('chart-panel').hidden = true;
 
         if (state.result.tree) renderTree(state.result.tree);
@@ -460,7 +467,7 @@ function drawClassification(X, w, h) {
         const frame = r.frames[state.anim.frame];
         grid = frame.grid;
         const prefix = state.algorithm === 'mlp' ? 'epoch' : '迭代';
-        $('anim-label').textContent = `${prefix} ${frame.epoch}`;
+        $('anim-label').textContent = frame.label ?? `${prefix} ${frame.epoch}`;
         $('anim-slider').value = state.anim.frame;
     }
 
@@ -484,65 +491,80 @@ function drawClassification(X, w, h) {
     drawPoints(X, state.data.y, t, testSet);
 }
 
-// ---- 聚类：支持K-Means动画帧 ----
+// ---- 聚类：支持质心轨迹 / 标签演化 / DBSCAN扩展 / GMM椭圆 动画帧 ----
 function drawClustering(X, w, h) {
     const anim = state.anim;
     const r = state.result;
+    const t = makeTransform(X, w, h);
 
-    if (r && r.frames && anim.frames.length && anim.type === 'kmeans') {
+    if (r && r.frames && anim.frames.length && anim.type === 'cluster') {
         const frame = anim.frames[anim.frame];
-        const centroids = frame.centroids;
-        const t = makeTransform(X, w, h);
+        const centroids = frame.centroids || null;
 
         for (let i = 0; i < X.length; i++) {
-            let best = 0, bd = Infinity;
-            for (let c = 0; c < centroids.length; c++) {
-                const d = (X[i][0] - centroids[c][0]) ** 2 + (X[i][1] - centroids[c][1]) ** 2;
-                if (d < bd) { bd = d; best = c; }
+            // 优先使用帧内快照标签；否则回退到最近质心分配
+            let label = 0;
+            if (frame.labels != null) {
+                label = frame.labels[i];
+            } else if (centroids) {
+                let bd = Infinity;
+                for (let c = 0; c < centroids.length; c++) {
+                    const d = (X[i][0] - centroids[c][0]) ** 2 + (X[i][1] - centroids[c][1]) ** 2;
+                    if (d < bd) { bd = d; label = c; }
+                }
             }
+            const isNoise = frame.noise && frame.noise[i];
             const px = t.sx(X[i][0]), py = t.sy(X[i][1]);
             ctx.beginPath();
             ctx.arc(px, py, 5, 0, Math.PI * 2);
-            ctx.fillStyle = COLORS[best % COLORS.length];
+            ctx.fillStyle = isNoise ? NOISE_COLOR : COLORS[label % COLORS.length];
             ctx.fill();
             ctx.strokeStyle = '#fff';
             ctx.lineWidth = 1;
             ctx.stroke();
         }
 
+        // GMM：绘制每个成分的2σ高斯椭圆
+        if (frame.gaussians) {
+            for (let g = 0; g < frame.gaussians.length; g++)
+                drawGaussianEllipse(frame.gaussians[g], g, t);
+        }
+
         // 质心轨迹
-        ctx.strokeStyle = 'rgba(0,0,0,.25)';
-        ctx.setLineDash([4, 4]);
-        for (let c = 0; c < centroids.length; c++) {
-            ctx.beginPath();
-            for (let f = 0; f <= anim.frame; f++) {
-                const ct = anim.frames[f].centroids[c];
-                const px = t.sx(ct[0]), py = t.sy(ct[1]);
-                f === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+        if (centroids) {
+            ctx.strokeStyle = 'rgba(0,0,0,.25)';
+            ctx.setLineDash([4, 4]);
+            for (let c = 0; c < centroids.length; c++) {
+                ctx.beginPath();
+                for (let f = 0; f <= anim.frame; f++) {
+                    const ct = anim.frames[f].centroids && anim.frames[f].centroids[c];
+                    if (!ct) continue;
+                    const px = t.sx(ct[0]), py = t.sy(ct[1]);
+                    f === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+                }
+                ctx.stroke();
             }
-            ctx.stroke();
-        }
-        ctx.setLineDash([]);
+            ctx.setLineDash([]);
 
-        // 当前质心
-        for (let c = 0; c < centroids.length; c++) {
-            const px = t.sx(centroids[c][0]), py = t.sy(centroids[c][1]);
-            ctx.beginPath();
-            ctx.arc(px, py, 9, 0, Math.PI * 2);
-            ctx.fillStyle = '#fff';
-            ctx.fill();
-            ctx.strokeStyle = COLORS[c % COLORS.length];
-            ctx.lineWidth = 3;
-            ctx.stroke();
+            // 当前质心
+            for (let c = 0; c < centroids.length; c++) {
+                const px = t.sx(centroids[c][0]), py = t.sy(centroids[c][1]);
+                ctx.beginPath();
+                ctx.arc(px, py, 9, 0, Math.PI * 2);
+                ctx.fillStyle = '#fff';
+                ctx.fill();
+                ctx.strokeStyle = COLORS[c % COLORS.length];
+                ctx.lineWidth = 3;
+                ctx.stroke();
+            }
         }
 
-        $('anim-label').textContent = `迭代 ${anim.frame}`;
+        $('anim-label').textContent = frame.label ?? `帧 ${anim.frame}`;
         $('anim-slider').value = anim.frame;
         return;
     }
 
     // 静态聚类结果
-    const t = makeTransform(X, w, h);
     const labels = r ? r.labels : X.map(() => 0);
     const noise = r ? (r.noise || []) : [];
 
@@ -570,6 +592,30 @@ function drawClustering(X, w, h) {
     }
 }
 
+// 绘制二维高斯成分的2σ置信椭圆
+function drawGaussianEllipse(g, idx, t) {
+    const cov = g.cov;
+    const a = cov[0][0], b = cov[0][1], c = cov[1][1];
+    const tr = a + c, det = a * c - b * b;
+    const disc = Math.max(0, tr * tr / 4 - det);
+    const l1 = Math.max(1e-9, tr / 2 + Math.sqrt(disc));
+    const l2 = Math.max(1e-9, tr / 2 - Math.sqrt(disc));
+    const angle = Math.abs(b) < 1e-9 ? (a >= c ? 0 : Math.PI / 2) : Math.atan2(l1 - a, b);
+
+    const sc = t.sx(1) - t.sx(0);  // 数据单位 → 像素（等比变换）
+    const px = t.sx(g.mean[0]), py = t.sy(g.mean[1]);
+    ctx.beginPath();
+    ctx.ellipse(px, py, 2 * Math.sqrt(l1) * sc, 2 * Math.sqrt(l2) * sc,
+        -angle, 0, Math.PI * 2);
+    ctx.strokeStyle = COLORS[idx % COLORS.length];
+    ctx.globalAlpha = 0.85;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+}
+
 // ---- 回归：拟合曲线 ----
 function drawRegression(X, w, h) {
     const pts = X.map((p, i) => [p[0], state.data.y[i]]);
@@ -581,7 +627,7 @@ function drawRegression(X, w, h) {
     if (r && r.frames && state.anim.type === 'reg') {
         const frame = r.frames[state.anim.frame];
         curve = frame.curve;
-        $('anim-label').textContent = `迭代 ${frame.epoch}`;
+        $('anim-label').textContent = frame.label ?? `迭代 ${frame.epoch}`;
         $('anim-slider').value = state.anim.frame;
     }
 
@@ -608,12 +654,21 @@ function drawRegression(X, w, h) {
     }
 }
 
-// ---- 降维：投影散点 ----
+// ---- 降维：投影散点（支持嵌入演化动画帧） ----
 function drawEmbedding(X, w, h) {
     const r = state.result;
     if (!r || !r.embedding) return;
-    const t = makeTransform(r.embedding, w, h, 30);
-    drawPoints(r.embedding, state.data.y, t, null, 6);
+    let emb = r.embedding;
+    if (r.frames && state.anim.frames.length && state.anim.type === 'embed') {
+        const frame = r.frames[state.anim.frame];
+        if (frame && frame.embedding) {
+            emb = frame.embedding;
+            $('anim-label').textContent = frame.label ?? `迭代 ${frame.step}`;
+            $('anim-slider').value = state.anim.frame;
+        }
+    }
+    const t = makeTransform(emb, w, h, 30);
+    drawPoints(emb, state.data.y, t, null, 6);
 }
 
 // ===================== 损失曲线 =====================
@@ -676,6 +731,8 @@ function playAnim() {
     state.anim.playing = true;
     $('anim-play').textContent = '⏸';
     $('btn-play').textContent = '⏸';
+    const interval = state.anim.type === 'cluster' ? 350
+        : state.anim.type === 'embed' ? 200 : 150;
     state.anim.timer = setInterval(() => {
         state.anim.frame++;
         if (state.anim.frame >= state.anim.frames.length - 1) {
@@ -683,11 +740,12 @@ function playAnim() {
             stopAnim();
         }
         draw();
-        // 训练动画同步损失曲线进度
-        if (state.anim.type !== 'kmeans' && state.result.history) {
+        // 分类/回归动画同步损失曲线进度
+        if ((state.anim.type === 'grid' || state.anim.type === 'reg')
+            && state.result.history && state.result.history.length > 1) {
             drawLossChart(state.result.history.slice(0, state.anim.frame + 2));
         }
-    }, state.anim.type === 'kmeans' ? 400 : 150);
+    }, interval);
 }
 
 function stopAnim() {

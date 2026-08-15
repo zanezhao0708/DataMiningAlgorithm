@@ -38,6 +38,17 @@ class HierarchicalClustering:
 
         # 保存合并历史
         self.linkage_matrix = []
+        # 记录合并过程（每次合并后所有样本的簇标签快照，供可视化动画回放）
+        self.history = []
+
+        def _record():
+            snap = np.zeros(n_samples, dtype=int)
+            for cid, cluster in enumerate(clusters):
+                for sample_id in cluster:
+                    snap[sample_id] = cid
+            self.history.append(snap)
+
+        _record()
         cluster_sizes = {i: 1 for i in range(n_samples)}
         current_cluster_id = n_samples
 
@@ -70,6 +81,7 @@ class HierarchicalClustering:
             clusters.pop(merge_j)
             clusters.pop(merge_i)
             clusters.append(new_cluster)
+            _record()
 
             # 更新簇大小
             cluster_sizes[current_cluster_id] = len(new_cluster)
