@@ -97,6 +97,7 @@
             <div class="stage-head">
                 <div class="stage-title-row">
                     <h2 id="stage-title">选择算法</h2>
+                    <button class="btn source-toggle" id="btn-theory" title="查看算法原理与理论证明">算法原理</button>
                     <button class="btn source-toggle" id="btn-source" title="展开/收起当前算法的Python源码">查看源码</button>
                 </div>
                 <div class="metrics" id="metrics"></div>
@@ -143,6 +144,17 @@
                         </div>
                     </div>
                     <pre id="source-code"></pre>
+                </div>
+            </div>
+
+            <!-- 算法原理弹窗 -->
+            <div class="theory-overlay" id="theory-overlay" hidden>
+                <div class="theory-dialog">
+                    <div class="theory-head">
+                        <span class="theory-title" id="theory-title">算法原理</span>
+                        <button class="btn icon" id="theory-close" title="关闭">×</button>
+                    </div>
+                    <div class="theory-body markdown" id="theory-body"></div>
                 </div>
             </div>
         </section>

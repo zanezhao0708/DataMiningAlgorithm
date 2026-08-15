@@ -104,8 +104,16 @@ function bindUI() {
         // 点击遮罩空白处关闭弹窗
         if (e.target === $('source-overlay')) setSourceOpen(false);
     });
+    $('btn-theory').addEventListener('click', toggleTheory);
+    $('theory-close').addEventListener('click', () => setTheoryOpen(false));
+    $('theory-overlay').addEventListener('click', e => {
+        if (e.target === $('theory-overlay')) setTheoryOpen(false);
+    });
     document.addEventListener('keydown', e => {
-        if (e.key === 'Escape' && !$('source-overlay').hidden) setSourceOpen(false);
+        if (e.key === 'Escape') {
+            if (!$('source-overlay').hidden) setSourceOpen(false);
+            if (!$('theory-overlay').hidden) setTheoryOpen(false);
+        }
     });
     $('btn-issue').addEventListener('click', openIssue);
 }
@@ -139,6 +147,111 @@ async function loadSource() {
     } catch (e) {
         $('source-code').textContent = '源码加载失败，请检查网络后重试';
     }
+}
+
+// ===================== 算法原理弹窗 =====================
+function setTheoryOpen(open) {
+    $('theory-overlay').hidden = !open;
+    $('btn-theory').classList.toggle('active', open);
+    if (open) loadTheory();
+}
+
+function toggleTheory() {
+    setTheoryOpen($('theory-overlay').hidden);
+}
+
+async function loadTheory() {
+    if (!state.algorithm) return;
+    const algo = state.catalog[state.task]?.find(a => a.id === state.algorithm);
+    $('theory-title').textContent = algo ? `${algo.name} · 原理与理论证明` : '算法原理';
+    $('theory-body').innerHTML = '<p class="theory-loading">加载中...</p>';
+    try {
+        const res = await fetch(`/api/theory/${state.algorithm}`);
+        if (!res.ok) {
+            $('theory-body').innerHTML = `<p>暂无该算法的理论说明（HTTP ${res.status}）</p>`;
+            return;
+        }
+        const d = await res.json();
+        $('theory-body').innerHTML = markdownToHtml(d.markdown);
+    } catch (e) {
+        $('theory-body').innerHTML = '<p>理论说明加载失败，请检查网络后重试</p>';
+    }
+}
+
+// 轻量 Markdown 渲染：标题 / 列表 / 代码块 / 粗体 / 行内代码
+function markdownToHtml(md) {
+    const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const inline = s => {
+        let t = esc(s);
+        t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+        t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
+        return t;
+    };
+
+    const lines = md.split('\n');
+    const out = [];
+    let i = 0;
+    let list = null; // 'ul' | 'ol' | null
+
+    const closeList = () => {
+        if (list) { out.push(list === 'ul' ? '</ul>' : '</ol>'); list = null; }
+    };
+
+    while (i < lines.length) {
+        const raw = lines[i];
+        const line = raw.trim();
+
+        // 代码块 ``` ... ```
+        if (line.startsWith('```')) {
+            closeList();
+            const buf = [];
+            i++;
+            while (i < lines.length && !lines[i].trim().startsWith('```')) {
+                buf.push(lines[i]);
+                i++;
+            }
+            i++; // 跳过结束 ```
+            out.push('<pre><code>' + esc(buf.join('\n')) + '</code></pre>');
+            continue;
+        }
+
+        if (!line) { closeList(); i++; continue; }
+
+        // 标题
+        const h = line.match(/^(#{2,4})\s+(.*)$/);
+        if (h) {
+            closeList();
+            const lv = h[1].length;
+            out.push(`<h${lv}>${inline(h[2])}</h${lv}>`);
+            i++;
+            continue;
+        }
+
+        // 无序列表
+        const ul = line.match(/^[-*]\s+(.*)$/);
+        if (ul) {
+            if (list !== 'ul') { closeList(); out.push('<ul>'); list = 'ul'; }
+            out.push(`<li>${inline(ul[1])}</li>`);
+            i++;
+            continue;
+        }
+
+        // 有序列表
+        const ol = line.match(/^\d+\.\s+(.*)$/);
+        if (ol) {
+            if (list !== 'ol') { closeList(); out.push('<ol>'); list = 'ol'; }
+            out.push(`<li>${inline(ol[1])}</li>`);
+            i++;
+            continue;
+        }
+
+        // 普通段落
+        closeList();
+        out.push(`<p>${inline(line)}</p>`);
+        i++;
+    }
+    closeList();
+    return out.join('\n');
 }
 
 // 问题反馈：跳转 GitHub 新建 Issue，自动带上当前环境信息

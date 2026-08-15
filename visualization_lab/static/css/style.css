@@ -472,6 +472,106 @@ input[type="range"]::-webkit-slider-thumb {
     flex: 1;
 }
 
+/* 算法原理弹窗 */
+.theory-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, .45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 101;
+    padding: 24px;
+}
+.theory-overlay[hidden] { display: none; }
+.theory-dialog {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, .3);
+    width: min(860px, 94vw);
+    max-height: 86vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.theory-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+.theory-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+}
+.theory-head .btn.icon {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--text-dim);
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    cursor: pointer;
+}
+.theory-head .btn.icon:hover { border-color: var(--accent-2); color: var(--accent-2); }
+.theory-body {
+    padding: 8px 24px 24px;
+    overflow: auto;
+    flex: 1;
+}
+.theory-loading { color: var(--text-dim); }
+
+/* Markdown 内容样式 */
+.markdown { font-size: 14px; line-height: 1.75; color: #333; }
+.markdown h2 {
+    font-size: 19px;
+    margin: 22px 0 10px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid #eef1f6;
+    color: #1a2b4a;
+}
+.markdown h3 {
+    font-size: 15.5px;
+    margin: 18px 0 8px;
+    color: var(--accent);
+}
+.markdown h4 { font-size: 14px; margin: 14px 0 6px; color: #444; }
+.markdown p { margin: 8px 0; }
+.markdown ul, .markdown ol { margin: 8px 0; padding-left: 24px; }
+.markdown li { margin: 4px 0; }
+.markdown strong { color: #1a2b4a; font-weight: 700; }
+.markdown code {
+    font-family: ui-monospace, monospace;
+    font-size: 13px;
+    background: #eef2f9;
+    color: #c0392b;
+    padding: 1px 6px;
+    border-radius: 4px;
+}
+.markdown pre {
+    background: #f6f8fa;
+    border: 1px solid #e8ecf1;
+    border-radius: 8px;
+    padding: 12px 16px;
+    overflow: auto;
+    margin: 10px 0;
+}
+.markdown pre code {
+    background: transparent;
+    color: #24292f;
+    padding: 0;
+    font-size: 13px;
+    line-height: 1.6;
+    white-space: pre;
+}
+
 /* 滚动条 */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }

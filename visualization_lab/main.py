@@ -15,6 +15,7 @@ from typing import Optional
 
 from services.datasets import generate, previews
 from services.algorithms import get_catalog, run
+from services.theory import THEORY
 
 app = FastAPI(title="ML算法可视化实验室")
 
@@ -86,6 +87,15 @@ def api_source(algorithm: str):
             rel = os.path.relpath(path, os.path.join(os.path.dirname(__file__), '..'))
             return {'path': rel.replace(os.sep, '/'), 'source': inspect.getsource(cls)}
     raise HTTPException(status_code=404, detail=f"未知算法: {algorithm}")
+
+
+@app.get("/api/theory/{algorithm}")
+def api_theory(algorithm: str):
+    """返回算法的理论说明（原理 + 为什么 work）"""
+    md = THEORY.get(algorithm)
+    if md is None:
+        raise HTTPException(status_code=404, detail=f"未知算法: {algorithm}")
+    return {'algorithm': algorithm, 'markdown': md}
 
 
 @app.post("/api/run")
