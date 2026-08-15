@@ -49,6 +49,19 @@ body {
 .github-link:hover { color: var(--accent-2); }
 
 /* GitHub Star 按钮（醒目样式） */
+.owner-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    background: linear-gradient(135deg, #e8f0fe, #fef3e2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 12px;
+}
+.owner-tag svg { fill: var(--accent); }
 .star-btn {
     display: inline-flex;
     align-items: center;

@@ -29,6 +29,8 @@ from traditional_ml.linear_regression import LinearRegression
 from traditional_ml.polynomial_regression import PolynomialRegression
 from traditional_ml.ridge_regression import RidgeRegression
 from traditional_ml.lasso_regression import LassoRegression
+from traditional_ml.decision_tree_regressor import DecisionTreeRegressor
+from traditional_ml.mlp_regressor import MLPRegressor
 from traditional_ml.pca import PCA
 from traditional_ml.lda import LDA
 from traditional_ml.svd import SVD
@@ -612,7 +614,7 @@ REGRESSORS = {
     'ridge_regression': {
         'name': '岭回归 (L2)',
         'animated': True,
-        'params': [_slider('alpha', '正则强度 α', 0.0, 10.0, 1.0, 0.1)],
+        'params': [_slider('alpha', '正则强度 α', 0.0, 2000.0, 100.0, 10.0)],
         'build': lambda p: RidgeRegression(alpha=p['alpha'], method='normal_equation'),
     },
     'lasso_regression': {
@@ -622,6 +624,23 @@ REGRESSORS = {
                    _slider('n_iterations', '迭代次数', 100, 3000, 1000, 100)],
         'build': lambda p: LassoRegression(alpha=p['alpha'],
                                            n_iterations=p['n_iterations']),
+    },
+    'decision_tree_regression': {
+        'name': '决策树回归',
+        'animated': True,
+        'params': [_slider('max_depth', '最大深度', 1, 10, 6)],
+        'build': lambda p: DecisionTreeRegressor(max_depth=p['max_depth']),
+    },
+    'mlp_regression': {
+        'name': '神经网络回归 MLP',
+        'animated': True,
+        'params': [_slider('hidden_size', '隐藏层宽度', 2, 32, 16),
+                   _slider('learning_rate', '学习率', 0.01, 0.5, 0.05, 0.01),
+                   _slider('n_epochs', '训练轮数', 50, 2000, 300, 50)],
+        'build': lambda p: MLPRegressor(hidden_layers=(p['hidden_size'],),
+                                        learning_rate=p['learning_rate'],
+                                        n_epochs=p['n_epochs'],
+                                        activation='tanh', random_state=42),
     },
 }
 
@@ -650,10 +669,22 @@ def run_regression(algorithm, params, X, y):
         'r2': 1 - ss_res / (ss_tot + 1e-12),
     }
 
-    # 梯度下降类回归：用权重快照生成拟合曲线演化动画帧
+    # 各类回归算法的动画帧生成
     if algorithm == 'ridge_regression':
         # 岭回归无迭代过程：改为正则强度 α 扫描动画，观察收缩效应
         frames = _ridge_frames(params, np.asarray(X), np.asarray(y), curve_x)
+        result['frames'] = frames
+        result['history'] = [{'loss': f['loss'], 'accuracy': 0.0}
+                             for f in frames]
+    elif algorithm == 'decision_tree_regression':
+        # 决策树回归：按深度增量生长，曲线从平线逐步变成非线性阶梯
+        frames = _tree_regression_frames(model, curve_x)
+        result['frames'] = frames
+        result['history'] = [{'loss': f['loss'], 'accuracy': 0.0}
+                             for f in frames]
+    elif algorithm == 'mlp_regression':
+        # MLP回归：用各epoch权重快照前向传播，展示曲线从直线弯曲成形的过程
+        frames = _mlp_regression_frames(model, curve_x)
         result['frames'] = frames
         result['history'] = [{'loss': f['loss'], 'accuracy': 0.0}
                              for f in frames]
@@ -664,12 +695,45 @@ def run_regression(algorithm, params, X, y):
     return result
 
 
+def _tree_regression_frames(model, curve_x):
+    """按深度快照生成阶梯曲线动画帧（深度1为平线，逐层分裂出非线性结构）"""
+    frames = []
+    for snap in model.history:
+        curve_y = model._predict_tree(curve_x, snap['tree'])
+        frames.append({'epoch': snap['depth'] - 1,
+                       'label': f'深度 {snap["depth"]}',
+                       'curve': [[float(u), float(v)] for u, v in zip(curve_x.ravel(), curve_y)],
+                       'loss': float(snap['loss'])})
+    return frames
+
+
+def _mlp_regression_frames(model, curve_x, max_frames=40):
+    """用MLP各epoch权重快照生成拟合曲线动画帧"""
+    history = model.history
+    if len(history) > max_frames:
+        idx = np.linspace(0, len(history) - 1, max_frames).astype(int)
+        history = [history[i] for i in idx]
+
+    frames = []
+    for snap in history:
+        curve_y = model._predict_normalized(curve_x, snap['weights'], snap['biases'])
+        curve_y = curve_y * model.y_std_ + model.y_mean_
+        frames.append({'epoch': snap['epoch'],
+                       'label': f'epoch {snap["epoch"]}',
+                       'curve': [[float(u), float(v)] for u, v in zip(curve_x.ravel(), curve_y)],
+                       'loss': float(snap['loss'])})
+    return frames
+
+
 def _ridge_frames(params, X, y, curve_x, steps=24):
-    """α 扫描动画：正则强度从 0 逐渐增大，拟合曲线从贴合数据到被压平"""
+    """α 扫描动画：正则强度从 0 按对数空间增大，拟合曲线从贴合数据到被压平"""
     alpha_max = float(params['alpha'])
-    alphas = list(np.linspace(0.0, alpha_max, steps))
-    if alpha_max > 0:
-        alphas += [alpha_max]
+    # 对数空间扫描：小 α 段密集采样，大 α 段也能明显看到压平效果
+    if alpha_max > 1:
+        alphas = [0.0] + list(np.logspace(-2, np.log10(alpha_max), steps - 1))
+    else:
+        alphas = list(np.linspace(0.0, alpha_max, steps))
+    alphas.append(alpha_max)
     frames, seen = [], set()
     for i, a in enumerate(alphas):
         m = RidgeRegression(alpha=float(a), method='normal_equation')
@@ -677,11 +741,11 @@ def _ridge_frames(params, X, y, curve_x, steps=24):
         curve_y = m.predict(curve_x).ravel()
         pred = m.predict(X).ravel()
         mse = float(np.mean((y - pred) ** 2))
-        key = round(float(a), 6)
+        key = round(float(a), 4)
         if key in seen:
             continue
         seen.add(key)
-        frames.append({'epoch': i, 'label': f'α = {a:.2f}',
+        frames.append({'epoch': i, 'label': f'α = {a:.4g}',
                        'curve': [[float(u), float(v)] for u, v in zip(curve_x.ravel(), curve_y)],
                        'loss': mse})
     return frames
@@ -707,6 +771,7 @@ def _gd_regression_frames(model, curve_x, max_frames=40):
             curve_y = (curve_x @ w) + b
         frames.append({
             'epoch': snap['iter'],
+            'label': f'迭代 {snap["iter"]}',
             'curve': [[float(a), float(c)] for a, c in zip(curve_x.ravel(), curve_y)],
             'loss': float(snap['loss']),
         })

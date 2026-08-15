@@ -259,7 +259,8 @@ function selectAlgorithm(id) {
     document.querySelectorAll('.algo-item').forEach(el =>
         el.classList.toggle('active', el.dataset.id === id));
     renderParams();
-    if (!$('source-panel').hidden) loadSource();
+    const srcOverlay = $('source-overlay');
+    if (srcOverlay && !srcOverlay.hidden) loadSource();
     runAlgorithm();
 }
 
