@@ -82,7 +82,8 @@ def api_source(algorithm: str):
             defaults = {p['key']: p['default'] for p in spec['params']}
             cls = type(spec['build'](defaults))
             path = inspect.getfile(cls)
-            rel = os.path.relpath(path, os.path.join(os.path.dirname(__file__), '..', '..'))
+            # 相对仓库根目录（visualization_lab 的上一级），便于拼接 GitHub 链接
+            rel = os.path.relpath(path, os.path.join(os.path.dirname(__file__), '..'))
             return {'path': rel.replace(os.sep, '/'), 'source': inspect.getsource(cls)}
     raise HTTPException(status_code=404, detail=f"未知算法: {algorithm}")
 

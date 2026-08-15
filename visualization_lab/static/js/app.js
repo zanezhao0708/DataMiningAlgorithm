@@ -100,28 +100,60 @@ function bindUI() {
 
     $('btn-source').addEventListener('click', toggleSource);
     $('source-close').addEventListener('click', () => setSourceOpen(false));
+    $('source-overlay').addEventListener('click', e => {
+        // 点击遮罩空白处关闭弹窗
+        if (e.target === $('source-overlay')) setSourceOpen(false);
+    });
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && !$('source-overlay').hidden) setSourceOpen(false);
+    });
+    $('btn-issue').addEventListener('click', openIssue);
 }
 
-// ===================== 源码面板 =====================
+// ===================== 源码弹窗 =====================
+const GITHUB_REPO = 'https://github.com/zanezhao0708/DataMiningAlgorithm';
+
 function setSourceOpen(open) {
-    $('source-panel').hidden = !open;
+    $('source-overlay').hidden = !open;
     $('btn-source').classList.toggle('active', open);
     if (open) loadSource();
 }
 
 function toggleSource() {
-    setSourceOpen($('source-panel').hidden);
+    setSourceOpen($('source-overlay').hidden);
 }
 
 async function loadSource() {
     if (!state.algorithm) return;
+    $('source-code').textContent = '加载中...';
     try {
         const res = await fetch(`/api/source/${state.algorithm}`);
-        if (!res.ok) return;
+        if (!res.ok) {
+            $('source-code').textContent = `源码加载失败（HTTP ${res.status}）`;
+            return;
+        }
         const d = await res.json();
         $('source-path').textContent = d.path;
         $('source-code').textContent = d.source;
-    } catch (e) { /* 源码加载失败时静默 */ }
+        $('source-github').href = `${GITHUB_REPO}/blob/main/${d.path}`;
+    } catch (e) {
+        $('source-code').textContent = '源码加载失败，请检查网络后重试';
+    }
+}
+
+// 问题反馈：跳转 GitHub 新建 Issue，自动带上当前环境信息
+function openIssue() {
+    const algo = state.algorithm || '未选择';
+    const body = [
+        '## 问题描述', '', '',
+        '## 复现步骤', '1. ', '',
+        '## 期望行为', '', '',
+        '---',
+        `> 自动附带的环境信息：任务=${state.task}，算法=${algo}，` +
+        `数据集=${state.dataset}，样本数=${state.nSamples}，浏览器=${navigator.userAgent.slice(0, 80)}`,
+    ].join('\n');
+    const url = `${GITHUB_REPO}/issues/new?title=${encodeURIComponent('[反馈] ')}&body=${encodeURIComponent(body)}`;
+    window.open(url, '_blank');
 }
 
 // 请求合并：滑块连续拖动时只执行最后一次

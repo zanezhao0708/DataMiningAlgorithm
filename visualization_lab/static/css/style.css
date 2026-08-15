@@ -48,36 +48,59 @@ body {
 .github-link { color: var(--text-dim); text-decoration: none; font-size: 13px; }
 .github-link:hover { color: var(--accent-2); }
 
-/* GitHub Star 按钮 */
+/* GitHub Star 按钮（醒目样式） */
 .star-btn {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 5px 12px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: #fafafa;
-    color: var(--text);
+    gap: 7px;
+    padding: 7px 16px;
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #f5a623, #e6850f);
+    color: #fff;
     text-decoration: none;
-    font-size: 13px;
-    font-weight: 500;
+    font-size: 14px;
+    font-weight: 600;
+    box-shadow: 0 2px 8px rgba(230, 133, 15, .35);
     transition: all .15s;
 }
 .star-btn:hover {
-    border-color: var(--accent);
-    color: var(--accent);
-    background: #fff3e0;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(230, 133, 15, .45);
+    background: linear-gradient(135deg, #ffb547, #f0921a);
 }
 .star-btn svg { fill: currentColor; }
+.star-text { letter-spacing: .5px; }
 .star-count {
-    background: var(--panel);
-    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, .25);
     border-radius: 999px;
-    padding: 0 7px;
-    font-size: 11px;
-    color: var(--text-dim);
+    padding: 1px 8px;
+    font-size: 12px;
+    color: #fff;
     font-variant-numeric: tabular-nums;
 }
+
+/* 问题反馈按钮 */
+.issue-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 13px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fafafa;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all .15s;
+}
+.issue-btn:hover {
+    border-color: var(--accent-2);
+    color: var(--accent-2);
+    background: #e8f0fe;
+}
+.issue-btn svg { fill: currentColor; }
 
 /* 布局 */
 .layout {
@@ -372,41 +395,68 @@ input[type="range"]::-webkit-slider-thumb {
 .source-toggle:hover { border-color: var(--accent-2); color: var(--accent-2); }
 .source-toggle.active { border-color: var(--accent-2); color: var(--accent-2); background: #fff3e0; }
 
-/* 源码面板 */
-.source-panel {
+/* 源码弹窗 */
+.source-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, .45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 24px;
+}
+.source-overlay[hidden] { display: none; }
+.source-dialog {
     background: #1e1e2e;
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
+    border-radius: 10px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, .35);
+    width: min(760px, 92vw);
+    max-height: 82vh;
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
 }
 .source-head {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 12px;
+    gap: 10px;
+    padding: 10px 14px;
     background: #181825;
+    flex-shrink: 0;
 }
 .source-path {
     font-family: ui-monospace, monospace;
     font-size: 12px;
     color: #a6adc8;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
+.source-actions { display: flex; gap: 6px; flex-shrink: 0; }
 .source-head .btn.icon {
     background: transparent;
     border-color: #45475a;
     color: #cdd6f4;
-    width: 26px;
+    width: 28px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
+.source-head .btn.icon:hover { border-color: #89b4fa; color: #89b4fa; }
 #source-code {
     margin: 0;
-    padding: 12px 14px;
-    max-height: 380px;
+    padding: 14px 16px;
     overflow: auto;
     font-family: ui-monospace, monospace;
-    font-size: 12px;
-    line-height: 1.55;
+    font-size: 12.5px;
+    line-height: 1.6;
     color: #cdd6f4;
     white-space: pre;
+    flex: 1;
 }
 
 /* 滚动条 */
