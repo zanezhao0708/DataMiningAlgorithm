@@ -13,7 +13,7 @@ const state = {
     data: null,         // {X, y}
     result: null,
     elapsed: 0,
-    anim: { frames: [], frame: 0, playing: false, timer: null, type: null },
+    anim: { frames: [], frame: 0, playing: false, timer: null, type: null, speed: 1 },
     abort: null,
     pendingRun: null,   // 请求合并：防止滑块拖动时请求堆积
     runToken: 0,        // 请求序号：丢弃乱序返回的过期响应
@@ -91,6 +91,7 @@ function bindUI() {
     $('anim-play').addEventListener('click', toggleAnim);
     $('anim-prev').addEventListener('click', () => stepAnim(-1));
     $('anim-next').addEventListener('click', () => stepAnim(1));
+    $('anim-speed').addEventListener('click', cycleSpeed);
     $('anim-slider').addEventListener('input', e => {
         stopAnim();
         state.anim.frame = +e.target.value;
@@ -339,21 +340,21 @@ async function runAlgorithm() {
         // 动画帧（聚类过程 / 分类边界演化 / 回归拟合演化 / 降维投影演化）
         if (state.result.frames && state.result.frames.length > 1) {
             state.anim.frames = state.result.frames;
-            state.anim.frame = state.result.frames.length - 1;  // 默认显示最终状态
+            state.anim.frame = 0;  // 默认停在初始未执行状态，等待用户点击播放
             state.anim.type = state.task === 'clustering' ? 'cluster'
                 : state.task === 'regression' ? 'reg'
                 : state.task === 'dim_reduction' ? 'embed' : 'grid';
             $('anim-bar').hidden = false;
             $('anim-slider').max = state.result.frames.length - 1;
-            $('anim-slider').value = state.anim.frame;
+            $('anim-slider').value = 0;
         } else {
             $('anim-bar').hidden = true;
         }
         draw();
 
-        // 损失曲线
+        // 损失曲线：从初始状态开始播放时只显示起点
         if (state.result.history && state.result.history.length > 1)
-            drawLossChart(state.result.history);
+            drawLossChart(state.result.frames ? state.result.history.slice(0, 1) : state.result.history);
         else $('chart-panel').hidden = true;
 
         if (state.result.tree) renderTree(state.result.tree);
@@ -708,11 +709,12 @@ function drawLossChart(history) {
     const hasAcc = accs.some(a => a > 0);  // 回归任务无准确率曲线
     const maxL = Math.max(...losses), minL = Math.min(...losses);
     const pad = 6;
+    const denom = Math.max(1, losses.length - 1);  // 单点时防除零
 
     // 损失曲线（橙）
     c.beginPath();
     losses.forEach((l, i) => {
-        const x = pad + (w - pad * 2) * i / (losses.length - 1);
+        const x = pad + (w - pad * 2) * i / denom;
         const y = pad + (108 - pad) * (1 - (l - minL) / (maxL - minL + 1e-9));
         i === 0 ? c.moveTo(x, y) : c.lineTo(x, y);
     });
@@ -724,7 +726,7 @@ function drawLossChart(history) {
     if (hasAcc) {
         c.beginPath();
         accs.forEach((a, i) => {
-            const x = pad + (w - pad * 2) * i / (accs.length - 1);
+            const x = pad + (w - pad * 2) * i / denom;
             const y = pad + (108 - pad) * (1 - a);
             i === 0 ? c.moveTo(x, y) : c.lineTo(x, y);
         });
@@ -744,13 +746,17 @@ function drawLossChart(history) {
 }
 
 // ===================== 动画控制 =====================
+// 每帧基础间隔（ms）：放慢节奏，让演化过程看得清
+const BASE_INTERVAL = { cluster: 600, embed: 400, grid: 350, reg: 350 };
+const SPEED_OPTIONS = [1, 0.5, 2];  // 播放速度档位循环：1× → 0.5× → 2×
+
 function playAnim() {
     if (state.anim.playing) return;
     state.anim.playing = true;
     $('anim-play').textContent = '⏸';
-    $('btn-play').textContent = '⏸';
-    const interval = state.anim.type === 'cluster' ? 350
-        : state.anim.type === 'embed' ? 200 : 150;
+    $('btn-play').textContent = '⏸ 暂停';
+    const base = BASE_INTERVAL[state.anim.type] || 350;
+    const interval = Math.round(base / state.anim.speed);
     state.anim.timer = setInterval(() => {
         state.anim.frame++;
         if (state.anim.frame >= state.anim.frames.length - 1) {
@@ -768,20 +774,44 @@ function playAnim() {
                 : (frames[state.anim.frame].epoch ?? state.anim.frame) + 1;
             drawLossChart(hist.slice(0, upto));
         }
+        // GMM聚类：同步对数似然曲线
+        if (state.anim.type === 'cluster'
+            && state.result.history && state.result.history.length > 1) {
+            drawLossChart(state.result.history.slice(0, state.anim.frame + 1));
+        }
     }, interval);
 }
 
 function stopAnim() {
     state.anim.playing = false;
     $('anim-play').textContent = '▶';
-    $('btn-play').textContent = '▶';
+    $('btn-play').textContent = '▶ 开始播放';
     if (state.anim.timer) { clearInterval(state.anim.timer); state.anim.timer = null; }
 }
 
 function toggleAnim() {
     if (state.anim.playing) stopAnim();
     else {
-        if (state.anim.frame >= state.anim.frames.length - 1) state.anim.frame = 0;
+        // 已到末尾则回到初始未执行状态重新播放
+        if (state.anim.frame >= state.anim.frames.length - 1) {
+            state.anim.frame = 0;
+            draw();
+            if (state.result.history && state.result.history.length > 1)
+                drawLossChart(state.result.history.slice(0, 1));
+        }
+        playAnim();
+    }
+}
+
+function cycleSpeed() {
+    const idx = SPEED_OPTIONS.indexOf(state.anim.speed);
+    state.anim.speed = SPEED_OPTIONS[(idx + 1) % SPEED_OPTIONS.length];
+    $('anim-speed').textContent = state.anim.speed + '×';
+    // 播放中切换速度：重启定时器使其立即生效
+    if (state.anim.playing) {
+        clearInterval(state.anim.timer);
+        state.anim.timer = null;
+        state.anim.playing = false;
         playAnim();
     }
 }

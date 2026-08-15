@@ -33,9 +33,10 @@ class KMeans:
         X = np.array(X)
         n_samples, n_features = X.shape
 
-        # 随机初始化聚类中心
-        random_indices = np.random.choice(n_samples, self.n_clusters, replace=False)
-        self.centroids = X[random_indices]
+        # 随机初始化聚类中心：在数据包围盒内随机撒点（不局限于数据点），
+        # 使初始分配足够混乱，能清晰观察从混乱到收敛的过程
+        mins, maxs = X.min(axis=0), X.max(axis=0)
+        self.centroids = np.random.uniform(mins, maxs, size=(self.n_clusters, n_features))
 
         # 记录初始状态
         self.history = [{'centroids': self.centroids.copy()}]

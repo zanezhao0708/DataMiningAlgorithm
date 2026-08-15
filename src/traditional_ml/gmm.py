@@ -36,20 +36,31 @@ class GaussianMixtureModel:
 
         # 初始化参数
         self.weights = np.ones(self.n_components) / self.n_components
-        random_indices = np.random.choice(n_samples, self.n_components, replace=False)
-        self.means = X[random_indices]
-        self.covariances = np.array([np.eye(n_features) for _ in range(self.n_components)])
+        # 均值在数据包围盒内随机撒点，协方差取整体协方差（大椭圆覆盖全部数据），
+        # 使初始状态足够混乱，能清晰观察EM从混乱到收敛的过程
+        mins, maxs = X.min(axis=0), X.max(axis=0)
+        self.means = np.random.uniform(mins, maxs, size=(self.n_components, n_features))
+        if n_samples > 1:
+            overall_cov = np.atleast_2d(np.cov(X, rowvar=False)).reshape(n_features, n_features)
+            overall_cov = overall_cov + 1e-6 * np.eye(n_features)
+            if not np.all(np.isfinite(overall_cov)):
+                overall_cov = np.eye(n_features)
+        else:
+            overall_cov = np.eye(n_features)
+        self.covariances = np.array([overall_cov.copy() for _ in range(self.n_components)])
 
         # EM算法迭代
         prev_log_likelihood = -float('inf')
 
         # 记录训练过程（EM每轮参数快照，供可视化动画回放）
+        # 初始帧标签取初始参数下的E步分配，呈现"未训练"的混乱状态
+        init_resp = self._expectation(X)
         self.history = []
         self.history.append({
             'means': self.means.copy(),
             'covariances': np.array([c.copy() for c in self.covariances]),
             'weights': self.weights.copy(),
-            'labels': np.zeros(n_samples, dtype=int),
+            'labels': np.argmax(init_resp, axis=1),
             'log_likelihood': -float('inf'),
         })
 
