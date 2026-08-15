@@ -24,3 +24,7 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# 构建产物 / 工具生成的分享包
+.trae-html-share-packages/
+*.zip
