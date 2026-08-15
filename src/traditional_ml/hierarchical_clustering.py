@@ -22,75 +22,81 @@ class HierarchicalClustering:
 
     def fit(self, X):
         """
-        训练层次聚类模型（凝聚方法）
+        训练层次聚类模型（凝聚方法，Lance-Williams 增量更新簇间距离）
 
         参数:
             X: 训练特征，形状为(n_samples, n_features)
         """
         X = np.array(X)
         n_samples = X.shape[0]
+        n_target = max(1, self.n_clusters)
 
-        # 初始化每个样本为一个簇
-        clusters = [{i} for i in range(n_samples)]
-
-        # 计算距离矩阵
+        # 样本级距离矩阵（向量化计算）
         distances = self._compute_distance_matrix(X)
 
-        # 保存合并历史
         self.linkage_matrix = []
         # 记录合并过程（每次合并后所有样本的簇标签快照，供可视化动画回放）
         self.history = []
 
+        # 活动簇状态：初始每个样本自成一簇，编号 0..n-1；合并产生的新簇编号依次为 n, n+1, ...
+        active = list(range(n_samples))
+        sizes = {i: 1 for i in range(n_samples)}
+        members = {i: [i] for i in range(n_samples)}
+
+        # 簇间距离矩阵 D[i,j] = 当前第 i、j 个活动簇之间的距离
+        D = distances.copy()
+
         def _record():
             snap = np.zeros(n_samples, dtype=int)
-            for cid, cluster in enumerate(clusters):
-                for sample_id in cluster:
+            for cid, cluster_id in enumerate(active):
+                for sample_id in members[cluster_id]:
                     snap[sample_id] = cid
             self.history.append(snap)
 
         _record()
-        cluster_sizes = {i: 1 for i in range(n_samples)}
-        current_cluster_id = n_samples
+        next_id = n_samples
 
-        # 迭代合并簇
-        while len(clusters) > self.n_clusters:
-            # 找到最近的两个簇
-            min_dist = float('inf')
-            merge_i, merge_j = 0, 1
+        while len(active) > n_target:
+            k = len(active)
+            # 上三角中找最近的一对簇
+            iu = np.triu_indices(k, k=1)
+            flat = D[iu]
+            m = int(np.argmin(flat))
+            a, b = int(iu[0][m]), int(iu[1][m])
+            merge_dist = float(flat[m])
+            ida, idb = active[a], active[b]
+            na, nb = sizes[ida], sizes[idb]
 
-            for i in range(len(clusters)):
-                for j in range(i + 1, len(clusters)):
-                    dist = self._cluster_distance(clusters[i], clusters[j], distances, cluster_sizes)
-                    if dist < min_dist:
-                        min_dist = dist
-                        merge_i, merge_j = i, j
+            # 其余簇与新簇的距离（Lance-Williams 公式，对三种链接均精确）
+            keep = [t for t in range(k) if t != a and t != b]
+            if keep:
+                da, db = D[a, keep], D[b, keep]
+                if self.linkage == 'single':
+                    dn = np.minimum(da, db)
+                elif self.linkage == 'complete':
+                    dn = np.maximum(da, db)
+                else:  # average
+                    dn = (na * da + nb * db) / (na + nb)
 
-            # 记录合并历史
-            cluster_i = list(clusters[merge_i])[0] if len(clusters[merge_i]) == 1 else merge_i
-            cluster_j = list(clusters[merge_j])[0] if len(clusters[merge_j]) == 1 else merge_j
+            self.linkage_matrix.append([ida, idb, merge_dist, na + nb])
 
-            self.linkage_matrix.append([
-                cluster_i if cluster_i < n_samples else cluster_i,
-                cluster_j if cluster_j < n_samples else cluster_j,
-                min_dist,
-                len(clusters[merge_i]) + len(clusters[merge_j])
-            ])
-
-            # 合并簇
-            new_cluster = clusters[merge_i] | clusters[merge_j]
-            clusters.pop(merge_j)
-            clusters.pop(merge_i)
-            clusters.append(new_cluster)
+            # 合并 a、b 为新簇
+            members[next_id] = members[ida] + members[idb]
+            sizes[next_id] = na + nb
+            for t in sorted((a, b), reverse=True):
+                active.pop(t)
+            D = D[np.ix_(keep, keep)] if keep else np.zeros((0, 0))
+            if keep:
+                col = dn.reshape(-1, 1)
+                D = np.block([[D, col], [col.T, np.zeros((1, 1))]])
+            active.append(next_id)
+            next_id += 1
             _record()
-
-            # 更新簇大小
-            cluster_sizes[current_cluster_id] = len(new_cluster)
-            current_cluster_id += 1
 
         # 分配标签
         self.labels = np.zeros(n_samples, dtype=int)
-        for cluster_id, cluster in enumerate(clusters):
-            for sample_id in cluster:
+        for cluster_id, cluster in enumerate(active):
+            for sample_id in members[cluster]:
                 self.labels[sample_id] = cluster_id
 
         print(f"层次聚类训练完成")
@@ -98,17 +104,9 @@ class HierarchicalClustering:
         print(f"合并次数: {len(self.linkage_matrix)}")
 
     def _compute_distance_matrix(self, X):
-        """计算距离矩阵"""
-        n_samples = X.shape[0]
-        distances = np.zeros((n_samples, n_samples))
-
-        for i in range(n_samples):
-            for j in range(i + 1, n_samples):
-                dist = np.linalg.norm(X[i] - X[j])
-                distances[i, j] = dist
-                distances[j, i] = dist
-
-        return distances
+        """计算距离矩阵（向量化）"""
+        diff = X[:, None, :] - X[None, :, :]
+        return np.sqrt((diff ** 2).sum(-1))
 
     def _cluster_distance(self, cluster1, cluster2, distances, cluster_sizes):
         """计算两个簇之间的距离"""

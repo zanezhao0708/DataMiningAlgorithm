@@ -327,11 +327,16 @@ def _binary01(y):
     return y.astype(int)
 
 
-def _knn_frames(params, X_tr, y_fit, mesh, y_tr):
+def _knn_frames(params, X_tr, y_fit, mesh, y_tr, max_ks=21):
     """K值扫描动画：观察 K 从小到大，边界从过拟合到平滑"""
     y01 = _binary01(y_tr)
     frames, history = [], []
-    ks = sorted(set(list(range(1, int(params['k']) + 1, 2)) + [int(params['k'])]))
+    k_max = int(params['k'])
+    ks = sorted(set(list(range(1, k_max + 1, 2)) + [k_max]))
+    # 扫描点过多时等距抽稀（保留首尾）
+    if len(ks) > max_ks:
+        idx = np.linspace(0, len(ks) - 1, max_ks).astype(int)
+        ks = sorted(set(ks[i] for i in idx))
     for k in ks:
         m = KNN(k=k)
         m.fit(X_tr, y_fit)
@@ -356,7 +361,7 @@ def _tree_growth_frames(params, X_tr, y_fit, mesh, y_tr):
         frames.append({'epoch': d, 'label': f'深度 {d}',
                        'grid': grid.tolist(), 'loss': 0.0, 'accuracy': acc})
         history.append({'loss': 0.0, 'accuracy': acc})
-    return frames, history
+    return _sample_frames(frames, 40), _sample_frames(history, 40)
 
 
 def _nb_frames(X_tr, y_fit, mesh, y_tr, steps=20):
@@ -376,7 +381,7 @@ def _nb_frames(X_tr, y_fit, mesh, y_tr, steps=20):
     return frames, history
 
 
-def _adaboost_frames(model, mesh, X_tr, y_tr):
+def _adaboost_frames(model, mesh, X_tr, y_tr, max_frames=40):
     """弱分类器叠加动画：每个stump按权重加入集成，边界逐步细化"""
     y01 = _binary01(y_tr)
     frames, history = [], []
@@ -391,7 +396,7 @@ def _adaboost_frames(model, mesh, X_tr, y_tr):
                        'grid': grid.astype(int).tolist(),
                        'loss': 0.0, 'accuracy': acc})
         history.append({'loss': 0.0, 'accuracy': acc})
-    return frames, history
+    return _sample_frames(frames, max_frames), _sample_frames(history, max_frames)
 
 
 def _forest_frames(model, mesh, X_tr, y_tr):
@@ -411,7 +416,7 @@ def _forest_frames(model, mesh, X_tr, y_tr):
         frames.append({'epoch': t, 'label': f'树 {t}/{len(model.trees)}',
                        'grid': grid.tolist(), 'loss': 0.0, 'accuracy': acc})
         history.append({'loss': 0.0, 'accuracy': acc})
-    return frames, history
+    return _sample_frames(frames, 40), _sample_frames(history, 40)
 
 
 def serialize_tree(node, feature_names):
@@ -532,8 +537,9 @@ def run_clustering(algorithm, params, X, y=None):
         result['history'] = [{'loss': -f.get('log_likelihood', 0.0) if np.isfinite(f.get('log_likelihood', 0)) else 0.0,
                               'accuracy': 0.0} for f in result['frames']]
     elif algorithm == 'hierarchical' and getattr(model, 'history', None):
-        total = len(model.history)
-        frames = [{'step': i, 'label': f'合并 {i}（剩 {total - i} 簇）',
+        n = len(X)
+        # 第i帧 = 完成第i次合并后（i=0为合并前的初始状态），剩余簇数 = n - i
+        frames = [{'step': i, 'label': f'合并 {i}（剩 {n - i} 簇）',
                    'labels': snap.astype(int).tolist()}
                   for i, snap in enumerate(model.history)]
         result['frames'] = _sample_frames(frames, 40)
@@ -624,7 +630,12 @@ def run_regression(algorithm, params, X, y):
     """拟合一维回归并在区间上采样拟合曲线"""
     spec = REGRESSORS[algorithm]
     model = spec['build'](params)
-    model.fit(np.asarray(X), np.asarray(y))
+    X = np.asarray(X, dtype=float)
+    y = np.asarray(y, dtype=float)
+    if X.ndim != 2 or X.shape[1] != 1:
+        # 一维回归任务：防御性取第一列特征
+        X = X.reshape(len(X), -1)[:, :1]
+    model.fit(X, y)
 
     x_min, x_max = X[:, 0].min(), X[:, 0].max()
     curve_x = np.linspace(x_min - 0.3, x_max + 0.3, 120).reshape(-1, 1)
@@ -889,6 +900,13 @@ def run(task, algorithm, params, X, y, test_ratio=0.2):
     registry, runner = RUNNERS[task]
     if algorithm not in registry:
         raise ValueError(f"未知算法: {algorithm}")
+    # 缺失参数以默认值补齐（API健壮性：部分调用可能只传个别参数）
+    merged = {p['key']: p['default'] for p in registry[algorithm]['params']
+              if p.get('default') is not None}
+    merged.update(params or {})
+    params = merged
+    # 固定随机种子：同数据+同参数 => 可复现结果（K-Means/森林等含随机初始化）
+    np.random.seed(42)
     if task == 'classification':
         return runner(algorithm, params, np.asarray(X, dtype=float),
                       np.asarray(y, dtype=float), test_ratio=test_ratio)

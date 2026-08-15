@@ -39,7 +39,8 @@ class NaiveBayes:
         eps = 1e-4  # 防止方差为0
         coeff = 1.0 / np.sqrt(2.0 * np.pi * var + eps)
         exponent = np.exp(-((x - mean) ** 2) / (2 * var + eps))
-        return coeff * exponent
+        # 概率下限截断，避免 log(0) 产生 -inf
+        return np.maximum(coeff * exponent, 1e-12)
 
     def _predict_single(self, x):
         """对单个样本进行预测"""
@@ -62,7 +63,7 @@ class NaiveBayes:
 
     def predict(self, X):
         """
-        对多个样本进行预测
+        对多个样本进行预测（向量化实现，公式与 _predict_single 一致）
 
         参数:
             X: 测试特征，形状为(n_samples, n_features)
@@ -70,7 +71,22 @@ class NaiveBayes:
         返回:
             预测结果，形状为(n_samples,)
         """
-        return np.array([self._predict_single(x) for x in X])
+        X = np.array(X)
+        eps = 1e-4
+        log_floor = np.log(1e-12)  # 与 _gaussian_probability 的截断下限一致
+        best = np.full(len(X), self.classes[0])
+        best_score = np.full(len(X), -np.inf)
+        for c in self.classes:
+            var = self.var[c]
+            # log N(x; mean, var) 逐特征计算后截断下限再求和（与 _predict_single 一致）
+            log_pdf = np.maximum(-0.5 * np.log(2.0 * np.pi * var + eps)
+                                 - (X - self.mean[c]) ** 2 / (2 * var + eps),
+                                 log_floor).sum(axis=1)
+            score = np.log(self.priors[c]) + log_pdf
+            mask = score > best_score
+            best[mask] = c
+            best_score[mask] = score[mask]
+        return best
 
     def score(self, X, y):
         """

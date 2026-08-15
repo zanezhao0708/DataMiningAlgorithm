@@ -75,7 +75,9 @@ class KNN:
         # 分类：向量化距离矩阵 (n_test, n_train)
         diff = X[:, None, :] - self.X_train[None, :, :]
         dist_sq = np.sum(diff * diff, axis=2)
-        k_indices = np.argpartition(dist_sq, self.k, axis=1)[:, :self.k]
+        # k 不能超过训练样本数（argpartition 的 kth 必须 < n）
+        k = min(self.k, len(self.X_train))
+        k_indices = np.argpartition(dist_sq, k - 1, axis=1)[:, :k]
         k_labels = self.y_train[k_indices]
 
         # 多数投票：对每个测试样本统计邻居标签

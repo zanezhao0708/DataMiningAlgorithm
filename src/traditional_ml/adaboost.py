@@ -122,9 +122,10 @@ class AdaBoost:
         for estimator, weight in zip(self.estimators, self.estimator_weights):
             predictions += weight * self._stump_predict(X, estimator)
 
-        # 转换为类别标签
+        # 转换为类别标签（单类别时全部映射为该类）
         predictions = np.sign(predictions)
-        return np.where(predictions == -1, self.classes[0], self.classes[1])
+        pos = self.classes[min(1, len(self.classes) - 1)]
+        return np.where(predictions == -1, self.classes[0], pos)
 
     def score(self, X, y):
         """

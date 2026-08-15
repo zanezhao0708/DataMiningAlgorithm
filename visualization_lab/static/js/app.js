@@ -16,6 +16,7 @@ const state = {
     anim: { frames: [], frame: 0, playing: false, timer: null, type: null },
     abort: null,
     pendingRun: null,   // 请求合并：防止滑块拖动时请求堆积
+    runToken: 0,        // 请求序号：丢弃乱序返回的过期响应
     userSelected: false, // 用户在tab初始化期间手动选择过算法
 };
 
@@ -286,11 +287,19 @@ async function regenerateData(withRun) {
         n_samples: state.nSamples, noise: state.noise,
         n_classes: state.nClasses, seed: Math.floor(Math.random() * 1e6),
     };
-    const res = await fetch('/api/dataset', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-    });
-    state.data = await res.json();
+    try {
+        const res = await fetch('/api/dataset', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        state.data = await res.json();
+    } catch (e) {
+        // 数据生成失败时保留现有数据并提示，避免未处理 rejection
+        $('metrics').innerHTML = `<div class="metric"><div class="m-label">错误</div>
+            <div class="m-value" style="color:var(--danger);font-size:11px">数据生成失败</div></div>`;
+        return;
+    }
     if (withRun && state.algorithm) runAlgorithm();
     else draw();
 }
@@ -299,6 +308,7 @@ async function runAlgorithm() {
     if (!state.algorithm || !state.data) return;
     if (state.abort) state.abort.abort();
     state.abort = new AbortController();
+    const token = ++state.runToken;
 
     $('loading').hidden = false;
     const t0 = performance.now();
@@ -319,7 +329,10 @@ async function runAlgorithm() {
             const err = await res.json().catch(() => ({}));
             throw new Error(err.detail || `HTTP ${res.status}`);
         }
-        state.result = await res.json();
+        const data = await res.json();
+        // 乱序防护：仅当这是最新一次请求时才应用结果
+        if (token !== state.runToken) return;
+        state.result = data;
         state.elapsed = performance.now() - t0;
 
         stopAnim();
@@ -348,12 +361,13 @@ async function runAlgorithm() {
 
         renderMetrics();
     } catch (e) {
-        if (e.name !== 'AbortError') {
+        if (e.name !== 'AbortError' && token === state.runToken) {
             $('metrics').innerHTML = `<div class="metric"><div class="m-label">错误</div>
                 <div class="m-value" style="color:var(--danger);font-size:11px">${e.message.slice(0, 40)}</div></div>`;
         }
     } finally {
-        $('loading').hidden = true;
+        // 仅最新请求有权收起加载指示器（过期请求不得干扰新请求的状态）
+        if (token === state.runToken) $('loading').hidden = true;
     }
 }
 
@@ -483,7 +497,8 @@ function drawClassification(X, w, h) {
                 const px = t.sx(wx), py = t.sy(wy);
                 ctx.fillStyle = COLORS[label % COLORS.length];
                 ctx.globalAlpha = 0.16;
-                ctx.fillRect(px - cw, py - ch, cw * 2 + 1, ch * 2 + 1);
+                // 半格宽的色块恰好铺满，重叠会导致半透明叠加出现色带
+                ctx.fillRect(px - cw / 2, py - ch / 2, cw + 0.5, ch + 0.5);
             }
         }
         ctx.globalAlpha = 1;
@@ -604,9 +619,12 @@ function drawGaussianEllipse(g, idx, t) {
 
     const sc = t.sx(1) - t.sx(0);  // 数据单位 → 像素（等比变换）
     const px = t.sx(g.mean[0]), py = t.sy(g.mean[1]);
+    // 半径上限防溢出画布（协方差病态增大时椭圆可能失控）
+    const maxR = 1.5 * Math.max(canvas.width, canvas.height);
+    const rx = Math.min(2 * Math.sqrt(l1) * sc, maxR);
+    const ry = Math.min(2 * Math.sqrt(l2) * sc, maxR);
     ctx.beginPath();
-    ctx.ellipse(px, py, 2 * Math.sqrt(l1) * sc, 2 * Math.sqrt(l2) * sc,
-        -angle, 0, Math.PI * 2);
+    ctx.ellipse(px, py, rx, ry, -angle, 0, Math.PI * 2);
     ctx.strokeStyle = COLORS[idx % COLORS.length];
     ctx.globalAlpha = 0.85;
     ctx.lineWidth = 2;
@@ -743,7 +761,12 @@ function playAnim() {
         // 分类/回归动画同步损失曲线进度
         if ((state.anim.type === 'grid' || state.anim.type === 'reg')
             && state.result.history && state.result.history.length > 1) {
-            drawLossChart(state.result.history.slice(0, state.anim.frame + 2));
+            const hist = state.result.history, frames = state.result.frames;
+            // history与帧等长时按帧索引；不等长（如MLP逐epoch记录）按帧内epoch对齐
+            const upto = hist.length === frames.length
+                ? state.anim.frame + 2
+                : (frames[state.anim.frame].epoch ?? state.anim.frame) + 1;
+            drawLossChart(hist.slice(0, upto));
         }
     }, interval);
 }
@@ -871,6 +894,11 @@ async function loadStarCount() {
 }
 
 // ===================== 启动 =====================
-window.addEventListener('resize', draw);
+// resize 防抖：避免拖拽窗口时高频重绘 50×50 决策边界网格
+let _resizeTimer = null;
+window.addEventListener('resize', () => {
+    clearTimeout(_resizeTimer);
+    _resizeTimer = setTimeout(draw, 120);
+});
 init();
 loadStarCount();

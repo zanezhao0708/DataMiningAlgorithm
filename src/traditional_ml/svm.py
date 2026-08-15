@@ -92,8 +92,9 @@ class SVM:
         """
         linear_output = np.dot(np.array(X), self.weights) - self.bias
         predictions = np.sign(linear_output)
-        # 将-1/1转换回原始类别
-        return np.where(predictions == -1, self.classes[0], self.classes[1])
+        # 将-1/1转换回原始类别（单类别时全部映射为该类）
+        pos = self.classes[min(1, len(self.classes) - 1)]
+        return np.where(predictions == -1, self.classes[0], pos)
 
     def decision_function(self, X):
         """

@@ -35,6 +35,8 @@ class LDA:
 
         if self.n_components is None:
             self.n_components = min(n_classes - 1, n_features)
+        # 至少保留1个方向（单类别等退化场景），且不超过特征数
+        self.n_components = max(1, min(self.n_components, n_features))
 
         # 计算总体均值
         overall_mean = np.mean(X, axis=0)
@@ -48,21 +50,24 @@ class LDA:
             X_c = X[y == c]
             mean_c = np.mean(X_c, axis=0)
 
-            # 类内散度
-            S_w += np.cov(X_c, rowvar=False) * (len(X_c) - 1)
+            # 类内散度（直接按离差平方和计算，单样本类不会产生NaN）
+            diff_c = X_c - mean_c
+            S_w += diff_c.T @ diff_c
 
             # 类间散度
             n_c = len(X_c)
             mean_diff = (mean_c - overall_mean).reshape(-1, 1)
             S_b += n_c * np.dot(mean_diff, mean_diff.T)
 
-        # 求解广义特征值问题
+        # 类内散度加微小正则，避免奇异（退化数据下 S_w 可能为全零矩阵）
+        S_w += 1e-10 * np.eye(n_features) * max(1.0, np.trace(S_w) / n_features)
+
+        # 求解广义特征值问题（S_w 已正则化，pinv 兜底奇异情形）
         try:
             eigenvalues, eigenvectors = np.linalg.eigh(
-                np.linalg.inv(S_w).dot(S_b)
+                np.linalg.solve(S_w, S_b)
             )
-        except:
-            # S_w可能是奇异的，使用伪逆
+        except np.linalg.LinAlgError:
             eigenvalues, eigenvectors = np.linalg.eigh(
                 np.linalg.pinv(S_w).dot(S_b)
             )
@@ -74,7 +79,10 @@ class LDA:
 
         # 保存投影矩阵
         self.scalings = eigenvectors[:, :self.n_components]
-        self.explained_variance_ratio = eigenvalues[:self.n_components] / np.sum(eigenvalues)
+        total_var = np.sum(np.abs(eigenvalues))
+        self.explained_variance_ratio = (np.abs(eigenvalues[:self.n_components])
+                                         / total_var if total_var > 0
+                                         else np.zeros(self.n_components))
 
         print(f"LDA训练完成，降维后维度: {self.n_components}")
         print(f"累计判别能力: {np.sum(self.explained_variance_ratio):.4f}")
