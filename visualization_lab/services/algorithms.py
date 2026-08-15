@@ -283,6 +283,21 @@ def _gd_classification_frames(algorithm, model, mesh, X_tr, y_tr):
         y_tr = np.where(y_tr == classes[0], 0, 1)
 
     frames = []
+    # 初始状态帧：未训练（w=0），决策边界尚未形成，整片空间预测单一类别
+    n_classes = len(np.unique(y_tr))
+    if algorithm == 'softmax_regression':
+        grid0 = np.zeros(len(mesh), dtype=int)
+        train0 = np.zeros(len(X_tr), dtype=int)
+        loss0 = float(np.log(n_classes))  # 均匀分布的交叉熵
+    else:
+        grid0 = np.ones(len(mesh), dtype=int)
+        train0 = np.ones(len(X_tr), dtype=int)
+        loss0 = float(np.log(2))
+    frames.append({'epoch': 0, 'label': '初始状态',
+                   'grid': grid0.tolist(),
+                   'loss': loss0,
+                   'accuracy': float(np.mean(train0 == y_tr))})
+
     for snap in history:
         w = np.asarray(snap['weights'], dtype=float)
         b = np.asarray(snap['bias'], dtype=float)
@@ -329,32 +344,38 @@ def _binary01(y):
     return y.astype(int)
 
 
-def _knn_frames(params, X_tr, y_fit, mesh, y_tr, max_ks=21):
-    """K值扫描动画：观察 K 从小到大，边界从过拟合到平滑"""
+def _knn_frames(params, X_tr, y_fit, mesh, y_tr, steps=20):
+    """样本增量动画：训练样本从 1 个逐步增加到全部，观察 KNN 边界从随机到清晰"""
     y01 = _binary01(y_tr)
     frames, history = [], []
-    k_max = int(params['k'])
-    ks = sorted(set(list(range(1, k_max + 1, 2)) + [k_max]))
-    # 扫描点过多时等距抽稀（保留首尾）
-    if len(ks) > max_ks:
-        idx = np.linspace(0, len(ks) - 1, max_ks).astype(int)
-        ks = sorted(set(ks[i] for i in idx))
-    for k in ks:
-        m = KNN(k=k)
-        m.fit(X_tr, y_fit)
+    k = int(params['k'])
+    n = len(X_tr)
+    # 打乱样本顺序，让"逐步加入"过程自然、避免顺序偏差
+    order = np.random.RandomState(42).permutation(n)
+    Xs, ys = X_tr[order], y_fit[order]
+    for s in range(1, steps + 1):
+        upto = max(1, int(round(n * (s - 1) / (steps - 1))))
+        m = KNN(k=min(k, upto))  # k 不超过当前已见样本数
+        m.fit(Xs[:upto], ys[:upto])
         grid = m.predict(mesh).astype(int)
-        acc = float(np.mean(m.predict(X_tr).astype(int) == y01)) if len(np.unique(y_tr)) == 2 \
-            else float(np.mean(m.predict(X_tr).astype(int) == y_tr))
-        frames.append({'epoch': k, 'label': f'K = {k}',
+        # 用全量训练集评估：样本越少，模型对整体预测越差，曲线单调上升
+        acc = float(np.mean(m.predict(X_tr).astype(int) == y01))
+        frames.append({'epoch': s, 'label': f'样本 {upto}/{n}',
                        'grid': grid.tolist(), 'loss': 0.0, 'accuracy': acc})
         history.append({'loss': 0.0, 'accuracy': acc})
     return frames, history
 
 
 def _tree_growth_frames(params, X_tr, y_fit, mesh, y_tr):
-    """深度生长动画：树逐层变深，边界从粗糙到精细"""
+    """深度生长动画：从深度0（未分裂，全预测多数类）逐层变深到精细边界"""
     y01 = _binary01(y_tr)
     frames, history = [], []
+    # 深度 0：完全未训练状态——整片空间预测为多数类（单一色块）
+    majority = int(np.bincount(y01).argmax())
+    frames.append({'epoch': 0, 'label': '深度 0（未分裂）',
+                   'grid': [majority] * len(mesh),
+                   'loss': 0.0, 'accuracy': float(np.mean(np.full(len(y01), majority) == y01))})
+    history.append({'loss': 0.0, 'accuracy': frames[-1]['accuracy']})
     for d in range(1, int(params['max_depth']) + 1):
         m = DecisionTree(max_depth=d)
         m.fit(X_tr, y_fit)
@@ -367,12 +388,12 @@ def _tree_growth_frames(params, X_tr, y_fit, mesh, y_tr):
 
 
 def _nb_frames(X_tr, y_fit, mesh, y_tr, steps=20):
-    """增量学习动画：朴素贝叶斯逐批吃进样本，高斯参数逐步收敛"""
+    """增量学习动画：朴素贝叶斯逐批吃进样本，从1个样本起高斯参数逐步收敛"""
     y01 = _binary01(y_tr)
     frames, history = [], []
     n = len(X_tr)
     for s in range(1, steps + 1):
-        upto = max(2, int(n * s / steps))
+        upto = max(1, int(round(n * (s - 1) / (steps - 1))))
         m = NaiveBayes()
         m.fit(X_tr[:upto], y_fit[:upto])
         grid = m.predict(mesh).astype(int)
@@ -384,9 +405,15 @@ def _nb_frames(X_tr, y_fit, mesh, y_tr, steps=20):
 
 
 def _adaboost_frames(model, mesh, X_tr, y_tr, max_frames=40):
-    """弱分类器叠加动画：每个stump按权重加入集成，边界逐步细化"""
+    """弱分类器叠加动画：从0个stump（全预测多数类）起，每个stump按权重加入集成"""
     y01 = _binary01(y_tr)
     frames, history = [], []
+    # 第 0 帧：0 个弱分类器，完全未训练——整片空间预测多数类
+    majority = int(np.bincount(y01).argmax())
+    frames.append({'epoch': 0, 'label': '0 个弱分类器',
+                   'grid': [majority] * len(mesh),
+                   'loss': 0.0, 'accuracy': float(np.mean(np.full(len(y01), majority) == y01))})
+    history.append({'loss': 0.0, 'accuracy': frames[-1]['accuracy']})
     agg = np.zeros(len(mesh))
     agg_tr = np.zeros(len(X_tr))
     for t, (stump, w) in enumerate(zip(model.estimators, model.estimator_weights), 1):
@@ -402,10 +429,16 @@ def _adaboost_frames(model, mesh, X_tr, y_tr, max_frames=40):
 
 
 def _forest_frames(model, mesh, X_tr, y_tr):
-    """逐树投票动画：森林中每多一棵树，投票边界更平滑"""
+    """逐树投票动画：从0棵树（全预测多数类）起，森林每多一棵树投票边界更平滑"""
     y_tr = np.asarray(y_tr).astype(int)
     n_classes = len(np.unique(y_tr))
     frames, history = [], []
+    # 第 0 帧：0 棵树，完全未训练——整片空间预测多数类
+    majority = int(np.bincount(y_tr).argmax())
+    frames.append({'epoch': 0, 'label': '0 棵树',
+                   'grid': [majority] * len(mesh),
+                   'loss': 0.0, 'accuracy': float(np.mean(np.full(len(y_tr), majority) == y_tr))})
+    history.append({'loss': 0.0, 'accuracy': frames[-1]['accuracy']})
     votes = np.zeros((len(mesh), n_classes))
     votes_tr = np.zeros((len(X_tr), n_classes))
     for t, tree_info in enumerate(model.trees, 1):
