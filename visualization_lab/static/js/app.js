@@ -14,6 +14,7 @@ const state = {
     result: null,
     elapsed: 0,
     anim: { frames: [], frame: 0, playing: false, timer: null, type: null, speed: 1 },
+    compare: { on: false, ids: [], results: null },
     abort: null,
     pendingRun: null,   // 请求合并：防止滑块拖动时请求堆积
     runToken: 0,        // 请求序号：丢弃乱序返回的过期响应
@@ -35,6 +36,7 @@ async function init() {
     bindUI();
     await loadPreviews();
     renderAlgoList();
+    updateCompareVisibility();
     await regenerateData(false);
     selectAlgorithm(state.catalog[state.task][0].id);
 }
@@ -51,6 +53,9 @@ function bindUI() {
             $('anim-bar').hidden = true;
             $('chart-panel').hidden = true;
             $('control-testratio').hidden = state.task !== 'classification';
+            // 离开分类任务时退出对比模式
+            if (state.task !== 'classification' && state.compare.on) setCompare(false);
+            updateCompareVisibility();
             loadPreviews().then(() => {
                 renderAlgoList();
                 // 加载期间用户已手动选择算法时，不再强制重置为第一个
@@ -84,9 +89,11 @@ function bindUI() {
     $('btn-reset').addEventListener('click', () => regenerateData(true));
     $('btn-play').addEventListener('click', () => {
         // 播放按钮：有动画则播放，否则重跑
-        if (state.anim.frames.length) toggleAnim();
+        if (state.compare.on) runCompare();
+        else if (state.anim.frames.length) toggleAnim();
         else runAlgorithm();
     });
+    $('btn-compare').addEventListener('click', () => setCompare(!state.compare.on));
 
     $('anim-play').addEventListener('click', toggleAnim);
     $('anim-prev').addEventListener('click', () => stepAnim(-1));
@@ -274,7 +281,8 @@ function scheduleRerun() {
     clearTimeout(state.pendingRun);
     state.pendingRun = setTimeout(async () => {
         await regenerateData(false);
-        if (state.algorithm) runAlgorithm();
+        if (state.compare.on) runCompare();
+        else if (state.algorithm) runAlgorithm();
     }, 300);
 }
 
@@ -360,8 +368,14 @@ function renderAlgoList() {
         const tags = [];
         if (algo.has_tree) tags.push('<span class="mini-tag tree">树</span>');
         if (algo.animated) tags.push('<span class="mini-tag anim">动画</span>');
+        if (state.compare.on && state.compare.ids.includes(algo.id))
+            tags.push('<span class="mini-tag cmp">✓</span>');
         div.innerHTML = `<span>${algo.name}</span><span class="algo-tags">${tags.join('')}</span>`;
-        div.addEventListener('click', () => selectAlgorithm(algo.id));
+        div.addEventListener('click', () => {
+            // 对比模式：点击加入/移出对比列表；普通模式：单选运行
+            if (state.compare.on) toggleCompareAlgo(algo.id);
+            else selectAlgorithm(algo.id);
+        });
         list.appendChild(div);
     }
 }
@@ -447,7 +461,8 @@ async function regenerateData(withRun) {
             <div class="m-value" style="color:var(--danger);font-size:11px">数据生成失败</div></div>`;
         return;
     }
-    if (withRun && state.algorithm) runAlgorithm();
+    if (withRun && state.compare.on) runCompare();
+    else if (withRun && state.algorithm) runAlgorithm();
     else draw();
 }
 
@@ -579,30 +594,51 @@ function drawGrid() {
     }
 }
 
-// 测试集点用空心标记区分
-function drawPoints(X, y, t, testSet, r = 5) {
+// 测试集点用空心标记区分（可绘制到任意context，对比卡片复用）
+function drawPoints(c, X, y, t, testSet, r = 5) {
     for (let i = 0; i < X.length; i++) {
         const px = t.sx(X[i][0]), py = t.sy(X[i][1]);
         const isTest = testSet && testSet.has(i);
-        ctx.beginPath();
-        ctx.arc(px, py, r, 0, Math.PI * 2);
+        c.beginPath();
+        c.arc(px, py, r, 0, Math.PI * 2);
         if (isTest) {
-            ctx.fillStyle = '#fff';
-            ctx.fill();
-            ctx.strokeStyle = COLORS[(y[i] ?? 0) % COLORS.length];
-            ctx.lineWidth = 2;
-            ctx.stroke();
+            c.fillStyle = '#fff';
+            c.fill();
+            c.strokeStyle = COLORS[(y[i] ?? 0) % COLORS.length];
+            c.lineWidth = 2;
+            c.stroke();
         } else {
-            ctx.fillStyle = COLORS[(y[i] ?? 0) % COLORS.length];
-            ctx.fill();
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 1;
-            ctx.stroke();
+            c.fillStyle = COLORS[(y[i] ?? 0) % COLORS.length];
+            c.fill();
+            c.strokeStyle = '#fff';
+            c.lineWidth = 1;
+            c.stroke();
         }
     }
 }
 
+// 决策边界色块网格（可绘制到任意context，对比卡片复用）
+function paintGrid(c, t, r, w, h, grid) {
+    const g = r.grid_size;
+    const cw = w / g, ch = h / g;
+    const [gx0, gx1] = r.x_range, [gy0, gy1] = r.y_range;
+    for (let row = 0; row < g; row++) {
+        for (let col = 0; col < g; col++) {
+            const label = grid[row * g + col];
+            const wx = gx0 + (gx1 - gx0) * (col + 0.5) / g;
+            const wy = gy0 + (gy1 - gy0) * (row + 0.5) / g;
+            const px = t.sx(wx), py = t.sy(wy);
+            c.fillStyle = COLORS[label % COLORS.length];
+            c.globalAlpha = 0.16;
+            // 半格宽的色块恰好铺满，重叠会导致半透明叠加出现色带
+            c.fillRect(px - cw / 2, py - ch / 2, cw + 0.5, ch + 0.5);
+        }
+    }
+    c.globalAlpha = 1;
+}
+
 function draw() {
+    if (state.compare.on) { drawCompareAll(); return; }
     const { w, h } = setupCanvas();
     ctx.clearRect(0, 0, w, h);
     drawGrid();
@@ -633,24 +669,9 @@ function drawClassification(X, w, h) {
     }
 
     if (grid && ranges) {
-        const g = r.grid_size;
-        const cw = w / g, ch = h / g;
-        const [gx0, gx1] = ranges[0], [gy0, gy1] = ranges[1];
-        for (let row = 0; row < g; row++) {
-            for (let col = 0; col < g; col++) {
-                const label = grid[row * g + col];
-                const wx = gx0 + (gx1 - gx0) * (col + 0.5) / g;
-                const wy = gy0 + (gy1 - gy0) * (row + 0.5) / g;
-                const px = t.sx(wx), py = t.sy(wy);
-                ctx.fillStyle = COLORS[label % COLORS.length];
-                ctx.globalAlpha = 0.16;
-                // 半格宽的色块恰好铺满，重叠会导致半透明叠加出现色带
-                ctx.fillRect(px - cw / 2, py - ch / 2, cw + 0.5, ch + 0.5);
-            }
-        }
-        ctx.globalAlpha = 1;
+        paintGrid(ctx, t, r, w, h, grid);
     }
-    drawPoints(X, state.data.y, t, testSet);
+    drawPoints(ctx, X, state.data.y, t, testSet);
 }
 
 // ---- 聚类：支持质心轨迹 / 标签演化 / DBSCAN扩展 / GMM椭圆 动画帧 ----
@@ -833,7 +854,173 @@ function drawEmbedding(X, w, h) {
         }
     }
     const t = makeTransform(emb, w, h, 30);
-    drawPoints(emb, state.data.y, t, null, 6);
+    drawPoints(ctx, emb, state.data.y, t, null, 6);
+}
+
+// ===================== 模型对比模式 =====================
+// 同一数据集上并排运行多个分类算法，对比决策边界与泛化能力（教学：模型权衡）
+function setCompare(on) {
+    if (on && state.task !== 'classification') return;
+    state.compare.on = on;
+    state.compare.results = on ? state.compare.results : null;
+    stopAnim();
+    $('btn-compare').classList.toggle('active', on);
+    $('btn-compare').textContent = on ? '✕ 退出对比' : '⇄ 对比模式';
+    $('canvas-wrap').hidden = on;
+    $('compare-panel').hidden = !on;
+    if (on) {
+        $('anim-bar').hidden = true;
+        $('chart-panel').hidden = true;
+        hideTree();
+        // 默认选中当前算法，保证开启即有内容
+        if (!state.compare.ids.length && state.algorithm)
+            state.compare.ids.push(state.algorithm);
+        renderAlgoList();
+        runCompare();
+    } else {
+        renderAlgoList();
+        if (state.algorithm) runAlgorithm();
+    }
+}
+
+function updateCompareVisibility() {
+    $('btn-compare').hidden = state.task !== 'classification';
+}
+
+function toggleCompareAlgo(id) {
+    const ids = state.compare.ids;
+    const i = ids.indexOf(id);
+    if (i >= 0) ids.splice(i, 1);
+    else if (ids.length < 4) ids.push(id);
+    renderAlgoList();
+    runCompare();
+}
+
+async function runCompare() {
+    if (!state.compare.on || !state.data) return;
+    const grid = $('compare-grid');
+    if (!state.compare.ids.length) {
+        state.compare.results = null;
+        grid.innerHTML = '<div class="compare-empty">从左侧点击算法加入对比（最多 4 个）</div>';
+        renderCompareMetrics(null);
+        return;
+    }
+    if (state.abort) state.abort.abort();
+    state.abort = new AbortController();
+    const token = ++state.runToken;
+
+    grid.innerHTML = '<div class="compare-empty"><span class="spinner"></span> 计算中...</div>';
+    try {
+        const body = {
+            task: 'classification',
+            algorithms: state.compare.ids.map(id => {
+                const algo = state.catalog.classification.find(a => a.id === id);
+                const params = {};
+                for (const p of (algo ? algo.params : [])) params[p.key] = p.default;
+                return { id, params };
+            }),
+            X: state.data.X,
+            y: state.data.y,
+            test_ratio: state.testRatio,
+        };
+        const res = await fetch('/api/compare', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body), signal: state.abort.signal,
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const d = await res.json();
+        if (token !== state.runToken) return;  // 乱序防护
+        state.compare.results = d.results;
+        renderCompare();
+    } catch (e) {
+        if (e.name !== 'AbortError' && token === state.runToken)
+            grid.innerHTML = `<div class="compare-empty">对比失败：${e.message}</div>`;
+    }
+}
+
+function renderCompare() {
+    const grid = $('compare-grid');
+    grid.innerHTML = '';
+    const results = state.compare.results || [];
+    const ok = results.filter(r => !r.error);
+    // 测试准确率最高的模型标"测试最优"
+    let bestId = null;
+    if (ok.length > 1) {
+        const best = ok.reduce((a, b) => (b.test_accuracy > a.test_accuracy ? b : a));
+        bestId = best.id;
+    }
+    for (const r of results) {
+        const algo = state.catalog.classification.find(a => a.id === r.id);
+        const card = document.createElement('div');
+        card.className = 'compare-card' + (r.id === bestId ? ' best' : '');
+        card.dataset.id = r.id;
+        if (r.error) {
+            card.innerHTML = `<div class="compare-head"><span class="compare-name">${algo ? algo.name : r.id}</span></div>
+                <div class="compare-error">${r.error.slice(0, 60)}</div>`;
+            grid.appendChild(card);
+            continue;
+        }
+        const gap = (r.accuracy - r.test_accuracy) * 100;
+        card.innerHTML = `
+            <div class="compare-head">
+                <span class="compare-name">${algo ? algo.name : r.id}</span>
+                ${r.id === bestId ? '<span class="compare-badge">测试最优</span>' : ''}
+            </div>
+            <canvas></canvas>
+            <div class="compare-meta">
+                <span title="训练集准确率">训练 ${(r.accuracy * 100).toFixed(1)}%</span>
+                <span title="测试集准确率">测试 ${(r.test_accuracy * 100).toFixed(1)}%</span>
+                <span class="${gap > 10 ? 'gap-warn' : ''}" title="训练-测试准确率间隙，越大越可能过拟合">间隙 ${gap.toFixed(1)}%</span>
+                <span class="m-dim">${r.elapsed_ms}ms</span>
+            </div>`;
+        grid.appendChild(card);
+    }
+    drawCompareAll();
+    renderCompareMetrics(results);
+}
+
+// 顶部指标区：对比模式显示汇总信息
+function renderCompareMetrics(results) {
+    const ok = (results || []).filter(r => !r.error);
+    if (!ok.length) {
+        $('metrics').innerHTML = `<div class="metric"><div class="m-label">模型对比</div>
+            <div class="m-value">0 个</div></div>`;
+        return;
+    }
+    const best = ok.reduce((a, b) => (b.test_accuracy > a.test_accuracy ? b : a));
+    const algo = state.catalog.classification.find(a => a.id === best.id);
+    $('metrics').innerHTML = `
+        <div class="metric"><div class="m-label">对比模型</div><div class="m-value">${ok.length} 个</div></div>
+        <div class="metric"><div class="m-label">测试最优</div>
+            <div class="m-value" style="font-size:12px">${algo ? algo.name : best.id}</div></div>
+        <div class="metric"><div class="m-label">最佳测试准确率</div>
+            <div class="m-value">${(best.test_accuracy * 100).toFixed(1)}%</div></div>`;
+}
+
+function drawCompareAll() {
+    if (!state.compare.results || !state.data) return;
+    document.querySelectorAll('#compare-grid .compare-card').forEach(card => {
+        const r = state.compare.results.find(x => x.id === card.dataset.id);
+        const cv = card.querySelector('canvas');
+        if (r && !r.error && cv) drawCompareCard(cv, r);
+    });
+}
+
+function drawCompareCard(cv, r) {
+    const dpr = window.devicePixelRatio || 1;
+    const w = cv.clientWidth || cv.parentElement.clientWidth || 300;
+    const h = 240;
+    cv.width = w * dpr;
+    cv.height = h * dpr;
+    cv.style.height = h + 'px';
+    const c = cv.getContext('2d');
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, w, h);
+    const X = state.data.X;
+    const t = makeTransform(X, w, h);
+    paintGrid(c, t, r, w, h, r.grid);
+    const testSet = r.test_indices ? new Set(r.test_indices) : null;
+    drawPoints(c, X, state.data.y, t, testSet, 3);
 }
 
 // ===================== 损失曲线 =====================
@@ -852,7 +1039,9 @@ function drawLossChart(history) {
 
     const losses = history.map(h => h.loss);
     const accs = history.map(h => h.accuracy);
+    const tests = history.map(h => h.test_accuracy);
     const hasAcc = accs.some(a => a > 0);  // 回归任务无准确率曲线
+    const hasTest = hasAcc && tests.some(v => v != null && !isNaN(v));
     const maxL = Math.max(...losses), minL = Math.min(...losses);
     const pad = 6;
     const denom = Math.max(1, losses.length - 1);  // 单点时防除零
@@ -868,7 +1057,7 @@ function drawLossChart(history) {
     c.lineWidth = 2;
     c.stroke();
 
-    // 准确率曲线（蓝，仅分类任务）
+    // 训练准确率曲线（蓝，仅分类任务）
     if (hasAcc) {
         c.beginPath();
         accs.forEach((a, i) => {
@@ -881,13 +1070,46 @@ function drawLossChart(history) {
         c.stroke();
     }
 
+    // 测试准确率曲线（绿，虚线）：与训练曲线的间隙直观展示过拟合
+    if (hasTest) {
+        c.beginPath();
+        c.setLineDash([5, 3]);
+        tests.forEach((v, i) => {
+            if (v == null || isNaN(v)) return;
+            const x = pad + (w - pad * 2) * i / denom;
+            const y = pad + (108 - pad) * (1 - v);
+            i === 0 ? c.moveTo(x, y) : c.lineTo(x, y);
+        });
+        c.strokeStyle = '#34a853';
+        c.lineWidth = 2;
+        c.stroke();
+        c.setLineDash([]);
+    }
+
     // 图例
     c.font = '10px sans-serif';
+    let lx = 8;
     c.fillStyle = '#e6850f';
-    c.fillText(`损失 ${losses[losses.length - 1].toFixed(3)}`, 8, 12);
+    c.fillText(`损失 ${losses[losses.length - 1].toFixed(3)}`, lx, 12);
+    lx += c.measureText(`损失 ${losses[losses.length - 1].toFixed(3)}`).width + 14;
     if (hasAcc) {
+        const t = `训练 ${(accs[accs.length - 1] * 100).toFixed(1)}%`;
         c.fillStyle = '#1a73e8';
-        c.fillText(`准确率 ${(accs[accs.length - 1] * 100).toFixed(1)}%`, 90, 12);
+        c.fillText(t, lx, 12);
+        lx += c.measureText(t).width + 14;
+    }
+    if (hasTest) {
+        const lastTe = tests[tests.length - 1];
+        const t = `测试 ${(lastTe * 100).toFixed(1)}%`;
+        c.fillStyle = '#34a853';
+        c.fillText(t, lx, 12);
+        lx += c.measureText(t).width + 14;
+        // 过拟合间隙：训练-测试差值，超过10%标红提示
+        const gap = (accs[accs.length - 1] - lastTe) * 100;
+        if (gap > 1) {
+            c.fillStyle = gap > 10 ? '#c62828' : '#9aa4b2';
+            c.fillText(`间隙 ${gap.toFixed(1)}%${gap > 10 ? ' ⚠过拟合' : ''}`, lx, 12);
+        }
     }
 }
 

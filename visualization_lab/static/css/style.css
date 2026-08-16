@@ -396,6 +396,96 @@ input[type="range"]::-webkit-slider-thumb {
 
 /* 标题行与源码按钮 */
 .stage-title-row { display: flex; align-items: center; gap: 10px; }
+
+/* 对比模式按钮 */
+#btn-compare.active {
+    border-color: var(--accent-2);
+    color: var(--accent-2);
+    background: #fff3e0;
+}
+/* 对比模式选中的算法项 */
+.algo-item.cmp-selected {
+    border-color: var(--accent-2);
+    background: #eef4ff;
+}
+
+/* 模型对比面板 */
+.compare-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    flex: 1;
+    min-height: 400px;
+    box-shadow: var(--shadow);
+    overflow-y: auto;
+}
+.compare-panel-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+.compare-panel-head h3 { font-size: 13px; color: var(--text); }
+.compare-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
+}
+.compare-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.compare-card.best { border-color: #34a853; box-shadow: 0 0 0 1px #34a853 inset; }
+.compare-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.compare-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.compare-badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: #e6f4ea;
+    color: #34a853;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.compare-card canvas { width: 100%; display: block; border-radius: 6px; }
+.compare-meta {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    font-size: 11px;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+}
+.compare-meta .m-dim { color: var(--text-dim); margin-left: auto; }
+.compare-meta .gap-warn { color: #c62828; font-weight: 600; }
+.compare-empty {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-height: 240px;
+    color: var(--text-dim);
+    font-size: 13px;
+}
+.compare-error {
+    font-size: 12px;
+    color: #c62828;
+    padding: 20px 10px;
+    text-align: center;
+}
+.mini-tag.cmp {
+    background: #eef4ff;
+    color: var(--accent-2);
+    border-color: var(--accent-2);
+}
+
 .source-toggle {
     padding: 4px 10px;
     font-size: 12px;

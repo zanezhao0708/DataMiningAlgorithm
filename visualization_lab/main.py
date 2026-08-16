@@ -46,6 +46,19 @@ class RunRequest(BaseModel):
     test_ratio: float = 0.2
 
 
+class CompareItem(BaseModel):
+    id: str
+    params: dict = {}
+
+
+class CompareRequest(BaseModel):
+    task: str = 'classification'
+    algorithms: list  # [{id, params?}]
+    X: list
+    y: Optional[list] = None
+    test_ratio: float = 0.2
+
+
 @app.get("/api/algorithms")
 def api_catalog():
     """返回全部算法目录"""
@@ -111,6 +124,27 @@ def api_run(req: RunRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
+
+
+@app.post("/api/compare")
+def api_compare(req: CompareRequest):
+    """同一数据集上并排运行多个算法（对比模式，只取最终边界，不生成动画帧）"""
+    import time
+    results = []
+    for item in req.algorithms[:4]:
+        aid = item.get('id') if isinstance(item, dict) else item
+        params = item.get('params') or {} if isinstance(item, dict) else {}
+        t0 = time.perf_counter()
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                r = run(req.task, aid, params, req.X, req.y,
+                        test_ratio=req.test_ratio, frames=False)
+            r['id'] = aid
+            r['elapsed_ms'] = round((time.perf_counter() - t0) * 1000)
+            results.append(r)
+        except Exception as e:
+            results.append({'id': aid, 'error': f"{type(e).__name__}: {e}"})
+    return {'results': results}
 
 
 # 静态前端（挂载在最后，避免覆盖API路由）

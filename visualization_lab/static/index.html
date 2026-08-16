@@ -54,6 +54,7 @@
                 <div class="control-row">
                     <button class="btn play" id="btn-play" title="从初始状态开始播放训练动画">▶ 开始播放</button>
                     <button class="btn ghost small" id="btn-reset" title="重新生成数据并重跑">↻ 重置</button>
+                    <button class="btn ghost small" id="btn-compare" title="对比模式：同一数据集并排比较多个算法" hidden>⇄ 对比模式</button>
                 </div>
                 <div class="control" id="control-testratio">
                     <label>测试集比例 <span class="val" id="val-testratio">20%</span></label>
@@ -103,12 +104,21 @@
                 <div class="metrics" id="metrics"></div>
             </div>
 
-            <div class="canvas-wrap">
+            <div class="canvas-wrap" id="canvas-wrap">
                 <canvas id="main-canvas"></canvas>
                 <div class="loading" id="loading" hidden>
                     <div class="spinner"></div>
                     <span>计算中...</span>
                 </div>
+            </div>
+
+            <!-- 模型对比面板 -->
+            <div class="compare-panel" id="compare-panel" hidden>
+                <div class="compare-panel-head">
+                    <h3>模型对比</h3>
+                    <span class="panel-hint">同一数据集 · 默认参数 · 点击左侧算法加入对比（最多 4 个）</span>
+                </div>
+                <div class="compare-grid" id="compare-grid"></div>
             </div>
 
             <!-- 动画控制条 -->
@@ -123,7 +133,7 @@
 
             <!-- 损失曲线 -->
             <div class="chart-panel" id="chart-panel" hidden>
-                <h3>训练损失 / 准确率</h3>
+                <h3>损失 / 训练·测试准确率 <span class="tree-hint">（虚线为测试集，与训练曲线的间隙即过拟合程度）</span></h3>
                 <canvas id="loss-canvas" height="120"></canvas>
             </div>
 

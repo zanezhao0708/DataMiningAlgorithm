@@ -142,8 +142,11 @@ def _train_test_split(X, y, test_ratio, seed=42):
     return X[train_idx], X[test_idx], y[train_idx], y[test_idx], test_idx
 
 
-def run_classification(algorithm, params, X, y, test_ratio=0.2):
-    """训练分类器并生成决策边界网格，支持训练/测试划分与MLP动画"""
+def run_classification(algorithm, params, X, y, test_ratio=0.2, frames=True):
+    """训练分类器并生成决策边界网格，支持训练/测试划分与MLP动画
+
+    frames=False 时跳过动画帧生成（对比模式只需最终边界，加速响应）
+    """
     spec = CLASSIFIERS[algorithm]
     model = spec['build'](params)
 
@@ -191,32 +194,37 @@ def run_classification(algorithm, params, X, y, test_ratio=0.2):
     }
 
     # MLP：生成逐epoch训练动画帧（决策边界演化 + 损失曲线）
-    if algorithm == 'mlp':
-        frames = _mlp_frames(model, mesh, X_tr, y_tr, GRID_SIZE)
-        result['frames'] = frames
-        result['history'] = model.history
+    if not frames:
+        pass  # 对比模式：跳过动画帧生成
+    elif algorithm == 'mlp':
+        fr = _mlp_frames(model, mesh, X_tr, y_tr, GRID_SIZE, X_te=X_te, y_te=y_te)
+        result['frames'] = fr
+        result['history'] = [{'loss': f['loss'], 'accuracy': f['accuracy'],
+                              'test_accuracy': f.get('test_accuracy')} for f in fr]
     elif algorithm == 'knn':
-        frames = _knn_frames(params, X_tr, y_fit, mesh, y_tr)
-        result['frames'], result['history'] = frames
+        result['frames'], result['history'] = _knn_frames(
+            params, X_tr, y_fit, mesh, y_tr, X_te=X_te, y_te=y_te)
     elif algorithm == 'decision_tree':
-        frames = _tree_growth_frames(params, X_tr, y_fit, mesh, y_tr)
-        result['frames'], result['history'] = frames
+        result['frames'], result['history'] = _tree_growth_frames(
+            params, X_tr, y_fit, mesh, y_tr, X_te=X_te, y_te=y_te)
     elif algorithm == 'naive_bayes':
-        frames = _nb_frames(X_tr, y_fit, mesh, y_tr)
-        result['frames'], result['history'] = frames
+        result['frames'], result['history'] = _nb_frames(
+            X_tr, y_fit, mesh, y_tr, X_te=X_te, y_te=y_te)
     elif algorithm == 'adaboost':
-        frames = _adaboost_frames(model, mesh, X_tr, y_tr)
-        result['frames'], result['history'] = frames
+        result['frames'], result['history'] = _adaboost_frames(
+            model, mesh, X_tr, y_tr, X_te=X_te, y_te=y_te)
     elif algorithm == 'random_forest':
-        frames = _forest_frames(model, mesh, X_tr, y_tr)
-        result['frames'], result['history'] = frames
+        result['frames'], result['history'] = _forest_frames(
+            model, mesh, X_tr, y_tr, X_te=X_te, y_te=y_te)
     elif spec.get('animated') and getattr(model, 'history', None):
         # 梯度下降类算法：用训练过程的权重快照生成决策边界动画帧
-        frames = _gd_classification_frames(algorithm, model, mesh, X_tr, y_tr)
-        if frames:
-            result['frames'] = frames
-            result['history'] = [{'loss': f['loss'], 'accuracy': f['accuracy']}
-                                 for f in frames]
+        fr = _gd_classification_frames(algorithm, model, mesh, X_tr, y_tr,
+                                       X_te=X_te, y_te=y_te)
+        if fr:
+            result['frames'] = fr
+            result['history'] = [{'loss': f['loss'], 'accuracy': f['accuracy'],
+                                  'test_accuracy': f.get('test_accuracy')}
+                                 for f in fr]
 
     # 树模型附带树结构（随机森林展示第一棵树）
     if spec.get('tree') == 'forest':
@@ -228,12 +236,13 @@ def run_classification(algorithm, params, X, y, test_ratio=0.2):
     return result
 
 
-def _mlp_frames(model, mesh, X_tr, y_tr, grid_size, max_frames=40):
+def _mlp_frames(model, mesh, X_tr, y_tr, grid_size, X_te=None, y_te=None, max_frames=40):
     """重放MLP训练过程，采样决策边界帧用于动画"""
     # 重新训练并记录中间状态（用相同随机种子保证可复现）
     n_epochs = model.n_epochs
     step = max(1, n_epochs // max_frames)
     frames = []
+    y_te_int = None if y_te is None else np.asarray(y_te).astype(int)
 
     # 保存当前权重，从头重放
     np.random.seed(model.random_state)
@@ -247,6 +256,8 @@ def _mlp_frames(model, mesh, X_tr, y_tr, grid_size, max_frames=40):
         probs = activations[-1]
         loss = model._cross_entropy(probs, y_onehot)
         acc = float(np.mean(np.argmax(probs, axis=1) == y_tr))
+        acc_te = (float(np.mean(np.argmax(model.predict_proba(X_te), axis=1) == y_te_int))
+                  if y_te_int is not None else None)
 
         if epoch % step == 0 or epoch == n_epochs - 1:
             grid_pred = np.argmax(model.predict_proba(mesh), axis=1)
@@ -255,6 +266,7 @@ def _mlp_frames(model, mesh, X_tr, y_tr, grid_size, max_frames=40):
                 'grid': grid_pred.tolist(),
                 'loss': float(loss),
                 'accuracy': acc,
+                'test_accuracy': acc_te,
             })
 
         # 一步梯度更新
@@ -270,17 +282,36 @@ def _mlp_frames(model, mesh, X_tr, y_tr, grid_size, max_frames=40):
     return frames
 
 
-def _gd_classification_frames(algorithm, model, mesh, X_tr, y_tr):
+def _gd_classification_frames(algorithm, model, mesh, X_tr, y_tr, X_te=None, y_te=None):
     """用梯度下降训练过程的权重快照，生成决策边界动画帧"""
     history = getattr(model, 'history', None)
     if not history:
         return None
     X_tr = np.asarray(X_tr, dtype=float)
     y_tr = np.asarray(y_tr)
+    X_te = None if X_te is None else np.asarray(X_te, dtype=float)
     if algorithm != 'softmax_regression':
         # 二分类：原始标签统一映射为 0/1 以便与预测比较
         classes = np.unique(y_tr)
         y_tr = np.where(y_tr == classes[0], 0, 1)
+        if y_te is not None:
+            y_te = np.where(np.asarray(y_te) == classes[0], 0, 1)
+    else:
+        y_te = None if y_te is None else np.asarray(y_te).astype(int)
+
+    def _pred(X, w, b):
+        """按算法类型用权重快照预测一批样本"""
+        if algorithm == 'logistic_regression':
+            return ((1 / (1 + np.exp(-np.clip(X @ w + b, -250, 250)))) >= 0.5).astype(int)
+        if algorithm == 'perceptron':
+            return ((X @ w + b) >= 0).astype(int)
+        if algorithm == 'svm':
+            return np.where(np.sign(X @ w - b) == -1, 0, 1)
+        # softmax_regression
+        s = X @ w + b
+        s -= s.max(axis=1, keepdims=True)
+        e = np.exp(s)
+        return np.argmax(e / e.sum(axis=1, keepdims=True), axis=1)
 
     frames = []
     # 初始状态帧：未训练（w=0），决策边界尚未形成，整片空间预测单一类别
@@ -288,49 +319,34 @@ def _gd_classification_frames(algorithm, model, mesh, X_tr, y_tr):
     if algorithm == 'softmax_regression':
         grid0 = np.zeros(len(mesh), dtype=int)
         train0 = np.zeros(len(X_tr), dtype=int)
+        test0 = np.zeros(len(X_te), dtype=int) if X_te is not None else None
         loss0 = float(np.log(n_classes))  # 均匀分布的交叉熵
     else:
         grid0 = np.ones(len(mesh), dtype=int)
         train0 = np.ones(len(X_tr), dtype=int)
+        test0 = np.ones(len(X_te), dtype=int) if X_te is not None else None
         loss0 = float(np.log(2))
     frames.append({'epoch': 0, 'label': '初始状态',
                    'grid': grid0.tolist(),
                    'loss': loss0,
-                   'accuracy': float(np.mean(train0 == y_tr))})
+                   'accuracy': float(np.mean(train0 == y_tr)),
+                   'test_accuracy': (float(np.mean(test0 == y_te))
+                                     if test0 is not None else None)})
 
     for snap in history:
         w = np.asarray(snap['weights'], dtype=float)
         b = np.asarray(snap['bias'], dtype=float)
-
-        if algorithm == 'logistic_regression':
-            grid = (1 / (1 + np.exp(-np.clip(mesh @ w + b, -250, 250)))) >= 0.5
-            train_pred = (1 / (1 + np.exp(-np.clip(X_tr @ w + b, -250, 250)))) >= 0.5
-        elif algorithm == 'perceptron':
-            grid = (mesh @ w + b) >= 0
-            train_pred = (X_tr @ w + b) >= 0
-        elif algorithm == 'svm':
-            # SVM 内部用 sign(x·w - b)，标签为 ±1
-            grid = np.sign(mesh @ w - b)
-            grid = np.where(grid == -1, 0, 1)
-            train_pred = np.sign(X_tr @ w - b)
-            train_pred = np.where(train_pred == -1, 0, 1)
-        elif algorithm == 'softmax_regression':
-            scores = mesh @ w + b
-            scores -= scores.max(axis=1, keepdims=True)
-            exp = np.exp(scores)
-            grid = np.argmax(exp / exp.sum(axis=1, keepdims=True), axis=1)
-            ts = X_tr @ w + b
-            ts -= ts.max(axis=1, keepdims=True)
-            te = np.exp(ts)
-            train_pred = np.argmax(te / te.sum(axis=1, keepdims=True), axis=1)
-        else:
-            continue
+        grid = _pred(mesh, w, b)
+        train_pred = _pred(X_tr, w, b)
+        test_pred = _pred(X_te, w, b) if X_te is not None else None
 
         frames.append({
             'epoch': snap['iter'],
             'grid': grid.astype(int).tolist(),
             'loss': float(snap.get('loss', 0.0)),
             'accuracy': float(np.mean(train_pred.astype(int) == y_tr)),
+            'test_accuracy': (float(np.mean(test_pred.astype(int) == y_te))
+                              if test_pred is not None else None),
         })
     return frames
 
@@ -344,9 +360,10 @@ def _binary01(y):
     return y.astype(int)
 
 
-def _knn_frames(params, X_tr, y_fit, mesh, y_tr, steps=20):
+def _knn_frames(params, X_tr, y_fit, mesh, y_tr, X_te=None, y_te=None, steps=20):
     """样本增量动画：训练样本从 1 个逐步增加到全部，观察 KNN 边界从随机到清晰"""
     y01 = _binary01(y_tr)
+    y_te01 = None if y_te is None else _binary01(y_te)
     frames, history = [], []
     k = int(params['k'])
     n = len(X_tr)
@@ -360,36 +377,47 @@ def _knn_frames(params, X_tr, y_fit, mesh, y_tr, steps=20):
         grid = m.predict(mesh).astype(int)
         # 用全量训练集评估：样本越少，模型对整体预测越差，曲线单调上升
         acc = float(np.mean(m.predict(X_tr).astype(int) == y01))
+        acc_te = (float(np.mean(m.predict(X_te).astype(int) == y_te01))
+                  if y_te01 is not None else None)
         frames.append({'epoch': s, 'label': f'样本 {upto}/{n}',
-                       'grid': grid.tolist(), 'loss': 0.0, 'accuracy': acc})
-        history.append({'loss': 0.0, 'accuracy': acc})
+                       'grid': grid.tolist(), 'loss': 0.0, 'accuracy': acc,
+                       'test_accuracy': acc_te})
+        history.append({'loss': 0.0, 'accuracy': acc, 'test_accuracy': acc_te})
     return frames, history
 
 
-def _tree_growth_frames(params, X_tr, y_fit, mesh, y_tr):
+def _tree_growth_frames(params, X_tr, y_fit, mesh, y_tr, X_te=None, y_te=None):
     """深度生长动画：从深度0（未分裂，全预测多数类）逐层变深到精细边界"""
     y01 = _binary01(y_tr)
+    y_te01 = None if y_te is None else _binary01(y_te)
     frames, history = [], []
     # 深度 0：完全未训练状态——整片空间预测为多数类（单一色块）
     majority = int(np.bincount(y01).argmax())
+    acc0 = float(np.mean(np.full(len(y01), majority) == y01))
+    acc0_te = (float(np.mean(np.full(len(y_te01), majority) == y_te01))
+               if y_te01 is not None else None)
     frames.append({'epoch': 0, 'label': '深度 0（未分裂）',
                    'grid': [majority] * len(mesh),
-                   'loss': 0.0, 'accuracy': float(np.mean(np.full(len(y01), majority) == y01))})
-    history.append({'loss': 0.0, 'accuracy': frames[-1]['accuracy']})
+                   'loss': 0.0, 'accuracy': acc0, 'test_accuracy': acc0_te})
+    history.append({'loss': 0.0, 'accuracy': acc0, 'test_accuracy': acc0_te})
     for d in range(1, int(params['max_depth']) + 1):
         m = DecisionTree(max_depth=d)
         m.fit(X_tr, y_fit)
         grid = m.predict(mesh).astype(int)
         acc = float(np.mean(_binary01(m.predict(X_tr)) == y01))
+        acc_te = (float(np.mean(_binary01(m.predict(X_te)) == y_te01))
+                  if y_te01 is not None else None)
         frames.append({'epoch': d, 'label': f'深度 {d}',
-                       'grid': grid.tolist(), 'loss': 0.0, 'accuracy': acc})
-        history.append({'loss': 0.0, 'accuracy': acc})
+                       'grid': grid.tolist(), 'loss': 0.0, 'accuracy': acc,
+                       'test_accuracy': acc_te})
+        history.append({'loss': 0.0, 'accuracy': acc, 'test_accuracy': acc_te})
     return _sample_frames(frames, 40), _sample_frames(history, 40)
 
 
-def _nb_frames(X_tr, y_fit, mesh, y_tr, steps=20):
+def _nb_frames(X_tr, y_fit, mesh, y_tr, X_te=None, y_te=None, steps=20):
     """增量学习动画：朴素贝叶斯逐批吃进样本，从1个样本起高斯参数逐步收敛"""
     y01 = _binary01(y_tr)
+    y_te01 = None if y_te is None else _binary01(y_te)
     frames, history = [], []
     n = len(X_tr)
     for s in range(1, steps + 1):
@@ -398,59 +426,81 @@ def _nb_frames(X_tr, y_fit, mesh, y_tr, steps=20):
         m.fit(X_tr[:upto], y_fit[:upto])
         grid = m.predict(mesh).astype(int)
         acc = float(np.mean(_binary01(m.predict(X_tr)) == y01))
+        acc_te = (float(np.mean(_binary01(m.predict(X_te)) == y_te01))
+                  if y_te01 is not None else None)
         frames.append({'epoch': s, 'label': f'样本 {upto}/{n}',
-                       'grid': grid.tolist(), 'loss': 0.0, 'accuracy': acc})
-        history.append({'loss': 0.0, 'accuracy': acc})
+                       'grid': grid.tolist(), 'loss': 0.0, 'accuracy': acc,
+                       'test_accuracy': acc_te})
+        history.append({'loss': 0.0, 'accuracy': acc, 'test_accuracy': acc_te})
     return frames, history
 
 
-def _adaboost_frames(model, mesh, X_tr, y_tr, max_frames=40):
+def _adaboost_frames(model, mesh, X_tr, y_tr, X_te=None, y_te=None, max_frames=40):
     """弱分类器叠加动画：从0个stump（全预测多数类）起，每个stump按权重加入集成"""
     y01 = _binary01(y_tr)
+    y_te01 = None if y_te is None else _binary01(y_te)
     frames, history = [], []
     # 第 0 帧：0 个弱分类器，完全未训练——整片空间预测多数类
     majority = int(np.bincount(y01).argmax())
+    acc0 = float(np.mean(np.full(len(y01), majority) == y01))
+    acc0_te = (float(np.mean(np.full(len(y_te01), majority) == y_te01))
+               if y_te01 is not None else None)
     frames.append({'epoch': 0, 'label': '0 个弱分类器',
                    'grid': [majority] * len(mesh),
-                   'loss': 0.0, 'accuracy': float(np.mean(np.full(len(y01), majority) == y01))})
-    history.append({'loss': 0.0, 'accuracy': frames[-1]['accuracy']})
+                   'loss': 0.0, 'accuracy': acc0, 'test_accuracy': acc0_te})
+    history.append({'loss': 0.0, 'accuracy': acc0, 'test_accuracy': acc0_te})
     agg = np.zeros(len(mesh))
     agg_tr = np.zeros(len(X_tr))
+    agg_te = np.zeros(len(X_te)) if X_te is not None else None
     for t, (stump, w) in enumerate(zip(model.estimators, model.estimator_weights), 1):
         agg += w * model._stump_predict(mesh, stump)
         agg_tr += w * model._stump_predict(X_tr, stump)
+        if agg_te is not None:
+            agg_te += w * model._stump_predict(X_te, stump)
         grid = np.where(np.sign(agg) == -1, 0, 1)
         acc = float(np.mean(np.where(np.sign(agg_tr) == -1, 0, 1) == y01))
+        acc_te = (float(np.mean(np.where(np.sign(agg_te) == -1, 0, 1) == y_te01))
+                  if agg_te is not None else None)
         frames.append({'epoch': t, 'label': f'弱分类器 {t}',
                        'grid': grid.astype(int).tolist(),
-                       'loss': 0.0, 'accuracy': acc})
-        history.append({'loss': 0.0, 'accuracy': acc})
+                       'loss': 0.0, 'accuracy': acc, 'test_accuracy': acc_te})
+        history.append({'loss': 0.0, 'accuracy': acc, 'test_accuracy': acc_te})
     return _sample_frames(frames, max_frames), _sample_frames(history, max_frames)
 
 
-def _forest_frames(model, mesh, X_tr, y_tr):
+def _forest_frames(model, mesh, X_tr, y_tr, X_te=None, y_te=None):
     """逐树投票动画：从0棵树（全预测多数类）起，森林每多一棵树投票边界更平滑"""
     y_tr = np.asarray(y_tr).astype(int)
+    y_te_int = None if y_te is None else np.asarray(y_te).astype(int)
     n_classes = len(np.unique(y_tr))
     frames, history = [], []
     # 第 0 帧：0 棵树，完全未训练——整片空间预测多数类
     majority = int(np.bincount(y_tr).argmax())
+    acc0 = float(np.mean(np.full(len(y_tr), majority) == y_tr))
+    acc0_te = (float(np.mean(np.full(len(y_te_int), majority) == y_te_int))
+               if y_te_int is not None else None)
     frames.append({'epoch': 0, 'label': '0 棵树',
                    'grid': [majority] * len(mesh),
-                   'loss': 0.0, 'accuracy': float(np.mean(np.full(len(y_tr), majority) == y_tr))})
-    history.append({'loss': 0.0, 'accuracy': frames[-1]['accuracy']})
+                   'loss': 0.0, 'accuracy': acc0, 'test_accuracy': acc0_te})
+    history.append({'loss': 0.0, 'accuracy': acc0, 'test_accuracy': acc0_te})
     votes = np.zeros((len(mesh), n_classes))
     votes_tr = np.zeros((len(X_tr), n_classes))
+    votes_te = np.zeros((len(X_te), n_classes)) if X_te is not None else None
     for t, tree_info in enumerate(model.trees, 1):
         tree = tree_info['tree']
         fi = tree_info['feature_indices']
         votes[np.arange(len(mesh)), tree.predict(mesh[:, fi]).astype(int)] += 1
         votes_tr[np.arange(len(X_tr)), tree.predict(X_tr[:, fi]).astype(int)] += 1
+        if votes_te is not None:
+            votes_te[np.arange(len(X_te)), tree.predict(X_te[:, fi]).astype(int)] += 1
         grid = np.argmax(votes, axis=1)
         acc = float(np.mean(np.argmax(votes_tr, axis=1) == y_tr))
+        acc_te = (float(np.mean(np.argmax(votes_te, axis=1) == y_te_int))
+                  if votes_te is not None else None)
         frames.append({'epoch': t, 'label': f'树 {t}/{len(model.trees)}',
-                       'grid': grid.tolist(), 'loss': 0.0, 'accuracy': acc})
-        history.append({'loss': 0.0, 'accuracy': acc})
+                       'grid': grid.tolist(), 'loss': 0.0, 'accuracy': acc,
+                       'test_accuracy': acc_te})
+        history.append({'loss': 0.0, 'accuracy': acc, 'test_accuracy': acc_te})
     return _sample_frames(frames, 40), _sample_frames(history, 40)
 
 
@@ -991,7 +1041,7 @@ def get_catalog():
     return catalog
 
 
-def run(task, algorithm, params, X, y, test_ratio=0.2):
+def run(task, algorithm, params, X, y, test_ratio=0.2, frames=True):
     """统一执行入口"""
     if task not in RUNNERS:
         raise ValueError(f"未知任务: {task}")
@@ -1007,6 +1057,7 @@ def run(task, algorithm, params, X, y, test_ratio=0.2):
     np.random.seed(42)
     if task == 'classification':
         return runner(algorithm, params, np.asarray(X, dtype=float),
-                      np.asarray(y, dtype=float), test_ratio=test_ratio)
+                      np.asarray(y, dtype=float), test_ratio=test_ratio,
+                      frames=frames)
     return runner(algorithm, params, np.asarray(X, dtype=float),
                   np.asarray(y, dtype=float))
